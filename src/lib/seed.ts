@@ -1,0 +1,148 @@
+import type { Database } from "@/types";
+
+// Seed data modeled on the real property/room info the owner shared (CHDV Lô C6,
+// Nam Long). Replace/edit through the admin UI once the app is running — this file
+// only supplies the very first data/db.json if that file doesn't exist yet.
+export function buildSeedDatabase(): Database {
+  const now = new Date().toISOString();
+  const propertyId = "prop-c6-nam-long";
+
+  return {
+    properties: [
+      {
+        id: propertyId,
+        name: "CHDV Lô C6, Khu dân cư Nam Long",
+        addressNew: "Khu phố 2, Phường Phú Thuận, Thành phố Hồ Chí Minh",
+        addressOld: "Quận 7, Thành phố Hồ Chí Minh",
+        contactPhone: "0768654627",
+        amenitiesShared: [
+          "Đầy đủ nội thất: tủ lạnh, máy lạnh, máy giặt, giường, bếp, tủ quần áo, bàn ghế",
+          "WC riêng",
+          "Miễn phí gửi xe",
+        ],
+        transportNotes: [
+          "Gần chợ, siêu thị, công viên, trường học",
+          "Giáp khu Phú Mỹ Hưng",
+          "Thuận tiện di chuyển ra Crescent Mall Nguyễn Lương Bằng",
+          "Gần khu chế xuất Tân Thuận, cảng Cát Lái",
+          "Khu dân cư an ninh, tiện ích đầy đủ",
+        ],
+        utilityFeeVersions: [
+          {
+            id: "fee-v1",
+            electricityPricePerKwh: 4000,
+            waterPricePerPerson: 100000,
+            serviceFeePerMonth: 200000,
+            effectiveFrom: "2026-07-11",
+          },
+        ],
+        depositPolicy: {
+          depositAmount: 2000000,
+          holdDays: 7,
+          forfeitureRule:
+            "Xem phòng chốt thì giữ 2 triệu, giữ 7 ngày nếu không quay lại mất cọc. Khách vào ký hợp đồng và đóng 1 tháng tiền thuê nhà.",
+          contractDepositMonths: 1,
+        },
+        commissionPolicy: [
+          { contractDurationMonths: 6, commissionPercent: 50 },
+          { contractDurationMonths: 12, commissionPercent: 80 },
+        ],
+        promotion: {
+          description: "Lì xì ngay 500k / phòng giao dịch thành công khách cọc",
+          validFrom: "2026-07-11",
+          validTo: "2026-07-30",
+        },
+        images: [],
+        isActive: true,
+        createdAt: now,
+        updatedAt: now,
+      },
+    ],
+    rooms: [
+      {
+        id: "room-t002",
+        propertyId,
+        code: "T002",
+        floor: "Trệt",
+        areaSqm: 26,
+        hasBalcony: false,
+        priceMonthly: 6200000,
+        status: "available",
+        statusUpdatedAt: now,
+        images: [],
+        description: "Phòng bên trong, trệt.",
+        isActive: true,
+        createdAt: now,
+        updatedAt: now,
+      },
+      {
+        id: "room-l101",
+        propertyId,
+        code: "L101",
+        floor: "Lầu 1",
+        areaSqm: 32,
+        hasBalcony: true,
+        priceMonthly: 7500000,
+        status: "available",
+        statusUpdatedAt: now,
+        images: [],
+        description: "Phòng có ban công, lầu 1.",
+        isActive: true,
+        createdAt: now,
+        updatedAt: now,
+      },
+      {
+        id: "room-l102",
+        propertyId,
+        code: "L102",
+        floor: "Lầu 1",
+        areaSqm: 20,
+        hasBalcony: false,
+        priceMonthly: 4900000,
+        status: "available",
+        statusUpdatedAt: now,
+        images: [],
+        description: "Phòng bên trong, lầu 1.",
+        isActive: true,
+        createdAt: now,
+        updatedAt: now,
+      },
+      {
+        id: "room-l201",
+        propertyId,
+        code: "L201",
+        floor: "Lầu 2",
+        areaSqm: 34,
+        hasBalcony: true,
+        priceMonthly: 8000000,
+        status: "available",
+        statusUpdatedAt: now,
+        subUnits: [
+          { label: "Phòng ngủ 1", notes: "Bộ nội thất riêng" },
+          { label: "Phòng ngủ 2", notes: "Bộ nội thất riêng" },
+        ],
+        images: [],
+        description: "Phòng có ban công, lầu 2, gồm 2 phòng ngủ với 2 bộ nội thất riêng.",
+        isActive: true,
+        createdAt: now,
+        updatedAt: now,
+      },
+      {
+        id: "room-l202",
+        propertyId,
+        code: "L202",
+        floor: "Lầu 2",
+        areaSqm: 20,
+        hasBalcony: false,
+        priceMonthly: 5200000,
+        status: "available",
+        statusUpdatedAt: now,
+        images: [],
+        description: "Phòng bên trong, lầu 2.",
+        isActive: true,
+        createdAt: now,
+        updatedAt: now,
+      },
+    ],
+  };
+}
