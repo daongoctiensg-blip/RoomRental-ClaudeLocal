@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import { useRouter } from "next/navigation";
-import type { CommissionTier, Property } from "@/types";
+import type { CommissionTier, Property, UtilityFeeVersion } from "@/types";
 
 type FormState = {
   name: string;
@@ -19,9 +19,22 @@ type FormState = {
   promotionDescription: string;
   promotionValidFrom: string;
   promotionValidTo: string;
+  electricityPricePerKwh: number;
+  waterPricePerPerson: number;
+  serviceFeePerMonth: number;
 };
 
+function currentFeeVersion(property?: Property) {
+  const versions = property?.utilityFeeVersions ?? [];
+  // Bản đang áp dụng = bản mới nhất có effectiveFrom <= hôm nay (đúng logic getCurrentUtilityFee trong db.ts)
+  const today = new Date().toISOString().slice(0, 10);
+  return versions
+    .filter((v) => v.effectiveFrom <= today)
+    .sort((a, b) => b.effectiveFrom.localeCompare(a.effectiveFrom))[0];
+}
+
 function toFormState(property?: Property): FormState {
+  const fee = currentFeeVersion(property);
   return {
     name: property?.name ?? "",
     addressNew: property?.addressNew ?? "",
@@ -37,6 +50,9 @@ function toFormState(property?: Property): FormState {
     promotionDescription: property?.promotion?.description ?? "",
     promotionValidFrom: property?.promotion?.validFrom ?? "",
     promotionValidTo: property?.promotion?.validTo ?? "",
+    electricityPricePerKwh: fee?.electricityPricePerKwh ?? 0,
+    waterPricePerPerson: fee?.waterPricePerPerson ?? 0,
+    serviceFeePerMonth: fee?.serviceFeePerMonth ?? 0,
   };
 }
 
@@ -45,6 +61,30 @@ function splitLines(value: string): string[] {
     .split("\n")
     .map((s) => s.trim())
     .filter(Boolean);
+}
+
+/** So sánh giá trị nhập với bản giá đang áp dụng — chỉ gọi API tạo bản mới
+ * khi thực sự có gì đổi, tránh tạo bản trùng lặp mỗi lần bấm Lưu. */
+function feeChanged(current: UtilityFeeVersion | undefined, form: FormState) {
+  const next = {
+    electricityPricePerKwh: Number(form.electricityPricePerKwh),
+    waterPricePerPerson: Number(form.waterPricePerPerson),
+    serviceFeePerMonth: Number(form.serviceFeePerMonth),
+  };
+  const hasAnyValue =
+    next.electricityPricePerKwh > 0 ||
+    next.waterPricePerPerson > 0 ||
+    next.serviceFeePerMonth > 0;
+  if (!hasAnyValue) return null; // chưa nhập gì thì bỏ qua, không gọi API
+  if (
+    current &&
+    current.electricityPricePerKwh === next.electricityPricePerKwh &&
+    current.waterPricePerPerson === next.waterPricePerPerson &&
+    current.serviceFeePerMonth === next.serviceFeePerMonth
+  ) {
+    return null; // không đổi gì so với bản hiện tại
+  }
+  return next;
 }
 
 export default function PropertyForm({ property }: { property?: Property }) {
@@ -102,13 +142,37 @@ export default function PropertyForm({ property }: { property?: Property }) {
       body: JSON.stringify(payload),
     });
 
-    setSaving(false);
     if (!res.ok) {
+      setSaving(false);
       const data = await res.json().catch(() => ({}));
       setError(data.error ?? "Có lỗi xảy ra");
       return;
     }
 
+    // Phí điện/nước/dịch vụ là dữ liệu append-only (giữ lịch sử giá cũ) —
+    // dùng đúng route riêng đã có sẵn cho việc này, không đè trực tiếp vào
+    // property như các field khác.
+    const data = await res.json();
+    const savedId: string = property?.id ?? data.property.id;
+    const newFee = feeChanged(currentFeeVersion(property), form);
+    if (newFee) {
+      const feeRes = await fetch(`/api/properties/${savedId}/utility-fees`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          ...newFee,
+          effectiveFrom: new Date().toISOString().slice(0, 10),
+        }),
+      });
+      if (!feeRes.ok) {
+        setSaving(false);
+        const feeData = await feeRes.json().catch(() => ({}));
+        setError(feeData.error ?? "Lưu thông tin nhà OK nhưng lưu phí dịch vụ thất bại");
+        return;
+      }
+    }
+
+    setSaving(false);
     router.push("/admin");
     router.refresh();
   };
@@ -174,6 +238,45 @@ export default function PropertyForm({ property }: { property?: Property }) {
             className={inputClass}
           />
         </Field>
+      </Section>
+
+      <Section title="Phí dịch vụ (điện / nước / phí dịch vụ chung)">
+        <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
+          <Field label="Điện (đ/kWh)">
+            <input
+              type="number"
+              value={form.electricityPricePerKwh}
+              onChange={(e) =>
+                update("electricityPricePerKwh", Number(e.target.value))
+              }
+              className={inputClass}
+            />
+          </Field>
+          <Field label="Nước (đ/người)">
+            <input
+              type="number"
+              value={form.waterPricePerPerson}
+              onChange={(e) =>
+                update("waterPricePerPerson", Number(e.target.value))
+              }
+              className={inputClass}
+            />
+          </Field>
+          <Field label="Phí dịch vụ (đ/tháng)">
+            <input
+              type="number"
+              value={form.serviceFeePerMonth}
+              onChange={(e) =>
+                update("serviceFeePerMonth", Number(e.target.value))
+              }
+              className={inputClass}
+            />
+          </Field>
+        </div>
+        <p className="text-xs text-slate-400">
+          Đổi số ở đây sẽ tạo 1 bản giá mới có hiệu lực từ hôm nay — bản giá
+          cũ vẫn được giữ lại, không mất lịch sử.
+        </p>
       </Section>
 
       <Section title="Chính sách cọc">
