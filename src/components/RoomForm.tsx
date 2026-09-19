@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import type { Property, Room, RoomStatus, SubUnit } from "@/types";
 import { ROOM_STATUSES, ROOM_STATUS_LABEL } from "@/types";
@@ -39,6 +39,36 @@ export default function RoomForm({
   const [subUnits, setSubUnits] = useState<SubUnit[]>(room?.subUnits ?? []);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [uploading, setUploading] = useState(false);
+  const [uploadError, setUploadError] = useState<string | null>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
+
+  const onPickFiles = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const files = Array.from(e.target.files ?? []);
+    e.target.value = ""; // cho phép chọn lại đúng file đó lần sau
+    if (!files.length) return;
+
+    setUploading(true);
+    setUploadError(null);
+    const uploadedUrls: string[] = [];
+    for (const file of files) {
+      const body = new FormData();
+      body.append("file", file);
+      const res = await fetch("/api/upload", { method: "POST", body });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        setUploadError(data.error ?? `Tải lên "${file.name}" thất bại`);
+        continue; // vẫn thử các file còn lại, không dừng cả loạt vì 1 file lỗi
+      }
+      uploadedUrls.push(data.url as string);
+    }
+    setUploading(false);
+    if (uploadedUrls.length) {
+      setImages((prev) =>
+        [prev.trim(), ...uploadedUrls].filter(Boolean).join("\n")
+      );
+    }
+  };
 
   const onSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -191,6 +221,27 @@ export default function RoomForm({
             rows={3}
             className={inputClass}
           />
+          <div className="mt-1 flex items-center gap-2">
+            <input
+              ref={fileInputRef}
+              type="file"
+              accept="image/jpeg,image/png,image/webp,image/gif"
+              multiple
+              className="hidden"
+              onChange={onPickFiles}
+            />
+            <button
+              type="button"
+              onClick={() => fileInputRef.current?.click()}
+              disabled={uploading}
+              className="rounded-lg border border-slate-300 px-3 py-1.5 text-xs font-medium text-slate-700 hover:border-[color:var(--color-accent)] disabled:opacity-60"
+            >
+              {uploading ? "Đang tải lên…" : "📷 Tải ảnh lên từ máy"}
+            </button>
+            {uploadError ? (
+              <span className="text-xs text-red-600">{uploadError}</span>
+            ) : null}
+          </div>
         </label>
         <label className="mt-4 flex flex-col gap-1">
           <span className="text-sm font-medium text-slate-700">

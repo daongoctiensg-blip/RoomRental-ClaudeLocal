@@ -26,6 +26,28 @@ const DATA_DIR = process.env.VERCEL
   : path.join(process.cwd(), "data");     // VPS: giữ nguyên chỗ cũ, bền qua các lần restart
 const DB_PATH = path.join(DATA_DIR, "db.json");
 
+/** Thư mục lưu ảnh admin upload — cùng gốc ghi được với DB, nên ăn theo đúng
+ * quy tắc VPS-vs-Vercel ở trên (không cần tự quyết lại nơi ghi lần 2). */
+const UPLOADS_DIR = path.join(DATA_DIR, "uploads");
+function ensureUploadsDir(): void {
+  if (!fs.existsSync(UPLOADS_DIR)) fs.mkdirSync(UPLOADS_DIR, { recursive: true });
+}
+
+/** Ghi 1 file ảnh admin vừa upload. Gọi từ route API, không đụng fs trực tiếp
+ * ở route.ts — path tính động (Vercel/tmp vs VPS/data) nên phải gom vào đây,
+ * ngoài không thì Next.js static-trace sẽ cảnh báo và kéo cả project vào build. */
+export function saveUploadedFile(filename: string, bytes: Buffer): void {
+  ensureUploadsDir();
+  fs.writeFileSync(path.join(UPLOADS_DIR, filename), bytes);
+}
+
+/** Đọc lại 1 file ảnh đã upload theo tên, dùng cho route phục vụ ảnh. */
+export function readUploadedFile(filename: string): Buffer | null {
+  const filePath = path.join(UPLOADS_DIR, filename);
+  if (!fs.existsSync(filePath)) return null;
+  return fs.readFileSync(filePath);
+}
+
 // Simple in-process write queue so concurrent requests don't interleave writes
 // and corrupt the JSON file. Good enough for a single Node process on a VPS;
 // a real DB would make this unnecessary.
