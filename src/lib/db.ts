@@ -1,10 +1,10 @@
 import fs from "fs";
 import path from "path";
 import { randomUUID } from "crypto";
+import type { PoolConnection } from "mysql2/promise";
 import type {
   CancellationSettlement,
   ContractSettlement,
-  Database,
   DocumentType,
   Property,
   PublicProperty,
@@ -17,180 +17,311 @@ import type {
   RoomWithProperty,
   UtilityFeeVersion,
 } from "@/types";
-import { buildSeedDatabase } from "@/lib/seed";
+import { getPool } from "@/lib/mysqlPool";
 
 // ---------------------------------------------------------------------------
-// JSON-file "database". Every read/write goes through this module, and every
-// function here returns/accepts the same shapes defined in src/types. When the
-// owner points this app at a real database, only this file (and its sibling
-// data files) should need to change — swap the internals for SQL/ORM calls
-// but keep the exported function signatures identical, and the rest of the
-// app (API routes, pages) keeps working untouched.
+// MySQL-backed data layer. Every function here returns/accepts the exact
+// same shapes as before (see src/types) — this file replaces the old
+// JSON-file version, but nothing outside it (API routes, pages, components)
+// needed to change. See scripts/schema.sql for the table definitions and
+// scripts/migrate.ts to create them + seed initial data.
 // ---------------------------------------------------------------------------
 
+// Uploaded files (room photos, documents) still live on disk — moving the
+// *data records* to a real database doesn't change how binary files are
+// stored; see saveUploadedFile/readUploadedFile/saveDocumentFile/
+// readDocumentFile below, unchanged from before.
 const DATA_DIR = process.env.VERCEL
-  ? path.join("/tmp", "room-rental-data") // Vercel: chỉ /tmp ghi được (KHÔNG bền — mất khi cold start/redeploy)
-  : path.join(process.cwd(), "data"); // VPS: giữ nguyên chỗ cũ, bền qua các lần restart
-const DB_PATH = path.join(DATA_DIR, "db.json");
+  ? path.join("/tmp", "room-rental-data")
+  : path.join(process.cwd(), "data");
 
 const UPLOADS_DIR = path.join(DATA_DIR, "uploads");
 function ensureUploadsDir(): void {
   if (!fs.existsSync(UPLOADS_DIR)) fs.mkdirSync(UPLOADS_DIR, { recursive: true });
 }
-
 export function saveUploadedFile(filename: string, bytes: Buffer): void {
   ensureUploadsDir();
   fs.writeFileSync(path.join(UPLOADS_DIR, filename), bytes);
 }
-
 export function readUploadedFile(filename: string): Buffer | null {
   const filePath = path.join(UPLOADS_DIR, filename);
   if (!fs.existsSync(filePath)) return null;
   return fs.readFileSync(filePath);
 }
 
-// Documents (hợp đồng, giấy xác nhận cọc, ...) live in a SEPARATE directory
-// from room photos and are served only through an admin-authenticated route
-// (/api/documents/file/[filename]), unlike photos which are public by design.
-// Don't reuse UPLOADS_DIR for these — mixing them would make it easy to
-// accidentally serve a contract on the same unauthenticated path as a photo.
 const DOCUMENTS_DIR = path.join(DATA_DIR, "documents");
 function ensureDocumentsDir(): void {
   if (!fs.existsSync(DOCUMENTS_DIR)) fs.mkdirSync(DOCUMENTS_DIR, { recursive: true });
 }
-
 export function saveDocumentFile(filename: string, bytes: Buffer): void {
   ensureDocumentsDir();
   fs.writeFileSync(path.join(DOCUMENTS_DIR, filename), bytes);
 }
-
 export function readDocumentFile(filename: string): Buffer | null {
   const filePath = path.join(DOCUMENTS_DIR, filename);
   if (!fs.existsSync(filePath)) return null;
   return fs.readFileSync(filePath);
 }
 
-// Simple in-process write queue so concurrent requests don't interleave writes
-// and corrupt the JSON file. Good enough for a single Node process on a VPS;
-// a real DB would make this unnecessary.
-let writeQueue: Promise<unknown> = Promise.resolve();
-
-function ensureDataFile(): void {
-  if (!fs.existsSync(DATA_DIR)) {
-    fs.mkdirSync(DATA_DIR, { recursive: true });
-  }
-  if (!fs.existsSync(DB_PATH)) {
-    const seed = buildSeedDatabase();
-    fs.writeFileSync(DB_PATH, JSON.stringify(seed, null, 2), "utf-8");
-  }
-}
-
-function readDbSync(): Database {
-  ensureDataFile();
-  const raw = fs.readFileSync(DB_PATH, "utf-8");
-  const parsed = JSON.parse(raw) as Partial<Database>;
-  // Backfill collections added after some db.json files were already created,
-  // so an older file on disk doesn't crash the app.
-  return {
-    properties: parsed.properties ?? [],
-    rooms: parsed.rooms ?? [],
-    roomStatusEvents: parsed.roomStatusEvents ?? [],
-    roomDocuments: parsed.roomDocuments ?? [],
-  };
-}
-
-function writeDbSync(db: Database): void {
-  ensureDataFile();
-  const tmpPath = `${DB_PATH}.${process.pid}.${Date.now()}.tmp`;
-  fs.writeFileSync(tmpPath, JSON.stringify(db, null, 2), "utf-8");
-  fs.renameSync(tmpPath, DB_PATH);
-}
-
-async function withDb<T>(fn: (db: Database) => T): Promise<T> {
-  const task = writeQueue.then(() => {
-    const db = readDbSync();
-    return fn(db);
-  });
-  writeQueue = task.catch(() => undefined);
-  return task;
-}
-
-async function mutateDb<T>(fn: (db: Database) => T): Promise<T> {
-  const task = writeQueue.then(() => {
-    const db = readDbSync();
-    const result = fn(db);
-    writeDbSync(db);
-    return result;
-  });
-  writeQueue = task.catch(() => undefined);
-  return task;
-}
-
 function nowIso(): string {
   return new Date().toISOString();
 }
 
-function recordEvent(
-  db: Database,
+// ------------------------- row <-> TS type mapping -------------------------
+function parseJson<T>(value: unknown, fallback: T): T {
+  if (value === null || value === undefined) return fallback;
+  if (typeof value === "string") return JSON.parse(value) as T;
+  return value as T;
+}
+
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+function rowToProperty(row: any): Property {
+  return {
+    id: row.id,
+    name: row.name,
+    addressNew: row.address_new,
+    addressOld: row.address_old ?? undefined,
+    lat: row.lat ?? undefined,
+    lng: row.lng ?? undefined,
+    contactPhone: row.contact_phone,
+    landlordName: row.landlord_name ?? undefined,
+    landlordContactPhone: row.landlord_contact_phone ?? undefined,
+    landlordZalo: row.landlord_zalo ?? undefined,
+    amenitiesShared: parseJson(row.amenities_shared, []),
+    transportNotes: parseJson(row.transport_notes, []),
+    utilityFeeVersions: parseJson(row.utility_fee_versions, []),
+    depositPolicy: parseJson(row.deposit_policy, {
+      holdAmount: 0,
+      holdDays: 0,
+      securityDepositMonths: 0,
+      prepaidRentMonths: 0,
+    }),
+    depositCancellationPolicy: parseJson(row.deposit_cancellation_policy, {
+      landlordSharePercent: 50,
+      saleSharePercent: 50,
+    }),
+    commissionPolicy: parseJson(row.commission_policy, []),
+    saleBonusPolicy: row.sale_bonus_policy ? parseJson(row.sale_bonus_policy, undefined) : undefined,
+    images: parseJson(row.images, []),
+    isActive: !!row.is_active,
+    createdAt: row.created_at,
+    updatedAt: row.updated_at,
+  };
+}
+
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+function rowToRoom(row: any): Room {
+  return {
+    id: row.id,
+    propertyId: row.property_id,
+    code: row.code,
+    floor: row.floor ?? undefined,
+    areaSqm: Number(row.area_sqm),
+    hasBalcony: !!row.has_balcony,
+    priceMonthly: Number(row.price_monthly),
+    status: row.status,
+    statusUpdatedAt: row.status_updated_at,
+    currentDeposit: row.current_deposit ? parseJson(row.current_deposit, undefined) : undefined,
+    subUnits: row.sub_units ? parseJson(row.sub_units, undefined) : undefined,
+    amenitiesOverride: row.amenities_override
+      ? parseJson(row.amenities_override, undefined)
+      : undefined,
+    images: parseJson(row.images, []),
+    description: row.description ?? undefined,
+    isActive: !!row.is_active,
+    createdAt: row.created_at,
+    updatedAt: row.updated_at,
+  };
+}
+
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+function rowToEvent(row: any): RoomStatusEvent {
+  return {
+    id: row.id,
+    roomId: row.room_id,
+    occurredAt: row.occurred_at,
+    fromStatus: row.from_status,
+    toStatus: row.to_status,
+    type: row.type,
+    note: row.note ?? undefined,
+    deposit: row.deposit ? parseJson(row.deposit, undefined) : undefined,
+    cancellation: row.cancellation ? parseJson(row.cancellation, undefined) : undefined,
+    contract: row.contract ? parseJson(row.contract, undefined) : undefined,
+  };
+}
+
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+function rowToDocument(row: any): RoomDocument {
+  return {
+    id: row.id,
+    roomId: row.room_id,
+    type: row.type,
+    fileUrl: row.file_url,
+    fileName: row.file_name,
+    uploadedAt: row.uploaded_at,
+    note: row.note ?? undefined,
+  };
+}
+
+async function recordEvent(
+  conn: PoolConnection,
   event: Omit<RoomStatusEvent, "id" | "occurredAt"> & { occurredAt?: string }
-): RoomStatusEvent {
+): Promise<RoomStatusEvent> {
   const full: RoomStatusEvent = {
     id: `evt-${randomUUID()}`,
     occurredAt: event.occurredAt ?? nowIso(),
     ...event,
   };
-  db.roomStatusEvents.push(full);
+  await conn.query(
+    `INSERT INTO room_status_events
+      (id, room_id, occurred_at, from_status, to_status, type, note, deposit, cancellation, contract)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+    [
+      full.id,
+      full.roomId,
+      full.occurredAt,
+      full.fromStatus,
+      full.toStatus,
+      full.type,
+      full.note ?? null,
+      full.deposit ? JSON.stringify(full.deposit) : null,
+      full.cancellation ? JSON.stringify(full.cancellation) : null,
+      full.contract ? JSON.stringify(full.contract) : null,
+    ]
+  );
   return full;
 }
 
 // ----------------------------- Properties -----------------------------
 
 export async function listProperties(opts?: { includeInactive?: boolean }): Promise<Property[]> {
-  return withDb((db) =>
-    db.properties.filter((p) => opts?.includeInactive || p.isActive)
-  );
+  const pool = getPool();
+  const sql = opts?.includeInactive
+    ? "SELECT * FROM properties ORDER BY created_at DESC"
+    : "SELECT * FROM properties WHERE is_active = 1 ORDER BY created_at DESC";
+  const [rows] = await pool.query(sql);
+  return (rows as unknown[]).map(rowToProperty);
 }
 
 export async function getProperty(id: string): Promise<Property | undefined> {
-  return withDb((db) => db.properties.find((p) => p.id === id));
+  const pool = getPool();
+  const [rows] = await pool.query("SELECT * FROM properties WHERE id = ?", [id]);
+  const arr = rows as unknown[];
+  return arr.length ? rowToProperty(arr[0]) : undefined;
 }
 
 export type PropertyInput = Omit<Property, "id" | "createdAt" | "updatedAt">;
 
 export async function createProperty(input: PropertyInput): Promise<Property> {
-  return mutateDb((db) => {
-    const property: Property = {
-      ...input,
-      id: `prop-${randomUUID()}`,
-      createdAt: nowIso(),
-      updatedAt: nowIso(),
-    };
-    db.properties.push(property);
-    return property;
-  });
+  const pool = getPool();
+  const property: Property = {
+    ...input,
+    id: `prop-${randomUUID()}`,
+    createdAt: nowIso(),
+    updatedAt: nowIso(),
+  };
+  await pool.query(
+    `INSERT INTO properties
+      (id, name, address_new, address_old, lat, lng, contact_phone,
+       landlord_name, landlord_contact_phone, landlord_zalo,
+       amenities_shared, transport_notes, utility_fee_versions,
+       deposit_policy, deposit_cancellation_policy, commission_policy,
+       sale_bonus_policy, images, is_active, created_at, updated_at)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+    [
+      property.id,
+      property.name,
+      property.addressNew,
+      property.addressOld ?? null,
+      property.lat ?? null,
+      property.lng ?? null,
+      property.contactPhone,
+      property.landlordName ?? null,
+      property.landlordContactPhone ?? null,
+      property.landlordZalo ?? null,
+      JSON.stringify(property.amenitiesShared),
+      JSON.stringify(property.transportNotes),
+      JSON.stringify(property.utilityFeeVersions),
+      JSON.stringify(property.depositPolicy),
+      JSON.stringify(property.depositCancellationPolicy),
+      JSON.stringify(property.commissionPolicy),
+      property.saleBonusPolicy ? JSON.stringify(property.saleBonusPolicy) : null,
+      JSON.stringify(property.images),
+      property.isActive ? 1 : 0,
+      property.createdAt,
+      property.updatedAt,
+    ]
+  );
+  return property;
 }
+
+const PROPERTY_COLUMN_MAP: Record<string, string> = {
+  name: "name",
+  addressNew: "address_new",
+  addressOld: "address_old",
+  lat: "lat",
+  lng: "lng",
+  contactPhone: "contact_phone",
+  landlordName: "landlord_name",
+  landlordContactPhone: "landlord_contact_phone",
+  landlordZalo: "landlord_zalo",
+  isActive: "is_active",
+};
+const PROPERTY_JSON_COLUMN_MAP: Record<string, string> = {
+  amenitiesShared: "amenities_shared",
+  transportNotes: "transport_notes",
+  utilityFeeVersions: "utility_fee_versions",
+  depositPolicy: "deposit_policy",
+  depositCancellationPolicy: "deposit_cancellation_policy",
+  commissionPolicy: "commission_policy",
+  saleBonusPolicy: "sale_bonus_policy",
+  images: "images",
+};
 
 export async function updateProperty(
   id: string,
   input: Partial<PropertyInput>
 ): Promise<Property | undefined> {
-  return mutateDb((db) => {
-    const property = db.properties.find((p) => p.id === id);
-    if (!property) return undefined;
-    Object.assign(property, input, { updatedAt: nowIso() });
-    return property;
-  });
+  const pool = getPool();
+  const sets: string[] = [];
+  const values: unknown[] = [];
+
+  for (const [key, column] of Object.entries(PROPERTY_COLUMN_MAP)) {
+    if (key in input) {
+      const v = (input as Record<string, unknown>)[key];
+      sets.push(`${column} = ?`);
+      values.push(key === "isActive" ? (v ? 1 : 0) : v ?? null);
+    }
+  }
+  for (const [key, column] of Object.entries(PROPERTY_JSON_COLUMN_MAP)) {
+    if (key in input) {
+      const v = (input as Record<string, unknown>)[key];
+      sets.push(`${column} = ?`);
+      values.push(v === undefined ? null : JSON.stringify(v));
+    }
+  }
+  if (sets.length === 0) return getProperty(id);
+
+  sets.push("updated_at = ?");
+  values.push(nowIso());
+  values.push(id);
+
+  const [result] = await pool.query(
+    `UPDATE properties SET ${sets.join(", ")} WHERE id = ?`,
+    values
+  );
+  if ((result as { affectedRows: number }).affectedRows === 0) return undefined;
+  return getProperty(id);
 }
 
 /** Soft-delete: keeps history, just hides it from the public site. */
 export async function deactivateProperty(id: string): Promise<boolean> {
-  return mutateDb((db) => {
-    const property = db.properties.find((p) => p.id === id);
-    if (!property) return false;
-    property.isActive = false;
-    property.updatedAt = nowIso();
-    return true;
-  });
+  const pool = getPool();
+  const [result] = await pool.query(
+    "UPDATE properties SET is_active = 0, updated_at = ? WHERE id = ?",
+    [nowIso(), id]
+  );
+  return (result as { affectedRows: number }).affectedRows > 0;
 }
 
 /** Append a new utility fee version. Never mutates/overwrites a past version. */
@@ -198,13 +329,36 @@ export async function addUtilityFeeVersion(
   propertyId: string,
   version: Omit<UtilityFeeVersion, "id">
 ): Promise<Property | undefined> {
-  return mutateDb((db) => {
-    const property = db.properties.find((p) => p.id === propertyId);
-    if (!property) return undefined;
-    property.utilityFeeVersions.push({ ...version, id: `fee-${randomUUID()}` });
-    property.updatedAt = nowIso();
-    return property;
-  });
+  const pool = getPool();
+  const conn = await pool.getConnection();
+  try {
+    await conn.beginTransaction();
+    const [rows] = await conn.query(
+      "SELECT utility_fee_versions FROM properties WHERE id = ? FOR UPDATE",
+      [propertyId]
+    );
+    const arr = rows as unknown[];
+    if (!arr.length) {
+      await conn.rollback();
+      return undefined;
+    }
+    const current: UtilityFeeVersion[] = parseJson(
+      (arr[0] as { utility_fee_versions: unknown }).utility_fee_versions,
+      []
+    );
+    const next = [...current, { ...version, id: `fee-${randomUUID()}` }];
+    await conn.query(
+      "UPDATE properties SET utility_fee_versions = ?, updated_at = ? WHERE id = ?",
+      [JSON.stringify(next), nowIso(), propertyId]
+    );
+    await conn.commit();
+  } catch (err) {
+    await conn.rollback();
+    throw err;
+  } finally {
+    conn.release();
+  }
+  return getProperty(propertyId);
 }
 
 export function getCurrentUtilityFee(
@@ -217,11 +371,7 @@ export function getCurrentUtilityFee(
 }
 
 // --------------------- Public (customer-safe) shapes ---------------------
-//
-// These strip every field that must never reach an unauthenticated visitor:
-// landlord contact info, commission %, the deposit-cancellation 50/50 split,
-// and the sale bonus ("lì xì"). Any endpoint or page that serves the public
-// site must go through these, never hand back a raw Property/Room.
+// Unchanged — pure functions, no DB involved.
 
 export function toPublicProperty(property: Property): PublicProperty {
   const {
@@ -250,101 +400,169 @@ export type RoomInput = Omit<
 
 /** Auto-expire any "deposited" room whose hold period has run out, reverting
  * it to "available" and logging a deposit_expired event. Runs as part of
- * every read so the public site is never more than one request stale. */
-function sweepExpiredDeposits(db: Database, now: Date): boolean {
-  let changed = false;
-  for (const room of db.rooms) {
-    if (room.status !== "deposited" || !room.currentDeposit) continue;
-    const deadline =
-      new Date(room.currentDeposit.depositedAt).getTime() +
-      room.currentDeposit.holdDays * 24 * 60 * 60 * 1000;
+ * every read so the public site is never more than one request stale. Locks
+ * each candidate row (FOR UPDATE) while it decides, so two simultaneous
+ * requests can't both sweep (and double-log) the same expired room. */
+async function sweepExpiredDeposits(conn: PoolConnection, now: Date): Promise<void> {
+  const [rows] = await conn.query(
+    "SELECT id, status, current_deposit FROM rooms WHERE status = 'deposited' AND current_deposit IS NOT NULL FOR UPDATE"
+  );
+  for (const row of rows as { id: string; current_deposit: unknown }[]) {
+    const deposit = parseJson<{ depositedAt: string; holdDays: number } | null>(
+      row.current_deposit,
+      null
+    );
+    if (!deposit) continue;
+    const deadline = new Date(deposit.depositedAt).getTime() + deposit.holdDays * 24 * 60 * 60 * 1000;
     if (now.getTime() < deadline) continue;
 
-    const fromStatus = room.status;
-    room.status = "available";
-    room.statusUpdatedAt = now.toISOString();
-    room.updatedAt = now.toISOString();
-    room.currentDeposit = undefined;
-    recordEvent(db, {
-      roomId: room.id,
-      fromStatus,
+    const nowStr = now.toISOString();
+    await conn.query(
+      "UPDATE rooms SET status = 'available', status_updated_at = ?, updated_at = ?, current_deposit = NULL WHERE id = ?",
+      [nowStr, nowStr, row.id]
+    );
+    await recordEvent(conn, {
+      roomId: row.id,
+      fromStatus: "deposited",
       toStatus: "available",
       type: "deposit_expired",
-      occurredAt: now.toISOString(),
+      occurredAt: nowStr,
       note: "Khách không quay lại trong thời hạn giữ cọc — chủ nhà giữ toàn bộ tiền giữ chỗ.",
     });
-    changed = true;
   }
-  return changed;
 }
 
 export async function listRooms(filter?: RoomFilter): Promise<RoomWithProperty[]> {
-  return mutateDb((db) => {
-    sweepExpiredDeposits(db, new Date());
+  const pool = getPool();
+  const conn = await pool.getConnection();
+  let rows;
+  try {
+    await conn.beginTransaction();
+    await sweepExpiredDeposits(conn, new Date());
+    await conn.commit();
 
-    const propertiesById = new Map(db.properties.map((p) => [p.id, p]));
-    let rooms = db.rooms.filter((r) => r.isActive);
+    const clauses: string[] = ["r.is_active = 1", "p.is_active = 1"];
+    const values: unknown[] = [];
 
     if (filter?.propertyId) {
-      rooms = rooms.filter((r) => r.propertyId === filter.propertyId);
+      clauses.push("r.property_id = ?");
+      values.push(filter.propertyId);
     }
     if (filter?.status && filter.status.length > 0) {
-      const statusSet = new Set(filter.status);
-      rooms = rooms.filter((r) => statusSet.has(r.status));
+      clauses.push(`r.status IN (${filter.status.map(() => "?").join(",")})`);
+      values.push(...filter.status);
     }
     if (typeof filter?.priceMin === "number") {
-      rooms = rooms.filter((r) => r.priceMonthly >= filter.priceMin!);
+      clauses.push("r.price_monthly >= ?");
+      values.push(filter.priceMin);
     }
     if (typeof filter?.priceMax === "number") {
-      rooms = rooms.filter((r) => r.priceMonthly < filter.priceMax!);
+      clauses.push("r.price_monthly < ?");
+      values.push(filter.priceMax);
     }
-
-    const withProperty: RoomWithProperty[] = rooms
-      .map((r) => {
-        const property = propertiesById.get(r.propertyId);
-        if (!property || !property.isActive) return null;
-        return { ...r, property };
-      })
-      .filter((r): r is RoomWithProperty => r !== null);
-
     if (filter?.address) {
-      const q = filter.address.trim().toLowerCase();
-      return withProperty.filter(
-        (r) =>
-          r.property.addressNew.toLowerCase().includes(q) ||
-          (r.property.addressOld ?? "").toLowerCase().includes(q) ||
-          r.property.name.toLowerCase().includes(q)
-      );
+      const q = `%${filter.address.trim().toLowerCase()}%`;
+      clauses.push("(LOWER(p.address_new) LIKE ? OR LOWER(p.address_old) LIKE ? OR LOWER(p.name) LIKE ?)");
+      values.push(q, q, q);
     }
 
-    return withProperty;
-  });
-}
+    [rows] = await conn.query(
+      `SELECT r.*, p.*, r.id AS room_id_, p.id AS property_id_
+       FROM rooms r JOIN properties p ON p.id = r.property_id
+       WHERE ${clauses.join(" AND ")}
+       ORDER BY r.created_at DESC`,
+      values
+    );
+  } catch (err) {
+    await conn.rollback();
+    throw err;
+  } finally {
+    conn.release();
+  }
 
-export async function getRoom(id: string): Promise<RoomWithProperty | undefined> {
-  return mutateDb((db) => {
-    sweepExpiredDeposits(db, new Date());
-    const room = db.rooms.find((r) => r.id === id);
-    if (!room) return undefined;
-    const property = db.properties.find((p) => p.id === room.propertyId);
-    if (!property) return undefined;
+  return (rows as Record<string, unknown>[]).map((row) => {
+    const room = rowToRoom({ ...row, id: row.room_id_ });
+    const property = rowToProperty({ ...row, id: row.property_id_ });
     return { ...room, property };
   });
 }
 
-export async function createRoom(input: RoomInput): Promise<Room> {
-  return mutateDb((db) => {
-    const room: Room = {
-      ...input,
-      id: `room-${randomUUID()}`,
-      statusUpdatedAt: nowIso(),
-      createdAt: nowIso(),
-      updatedAt: nowIso(),
-    };
-    db.rooms.push(room);
-    return room;
-  });
+export async function getRoom(id: string): Promise<RoomWithProperty | undefined> {
+  const pool = getPool();
+  const conn = await pool.getConnection();
+  try {
+    await conn.beginTransaction();
+    await sweepExpiredDeposits(conn, new Date());
+    await conn.commit();
+
+    const [rows] = await conn.query("SELECT * FROM rooms WHERE id = ?", [id]);
+    const arr = rows as unknown[];
+    if (!arr.length) return undefined;
+    const room = rowToRoom(arr[0]);
+    const property = await getProperty(room.propertyId);
+    if (!property) return undefined;
+    return { ...room, property };
+  } catch (err) {
+    await conn.rollback();
+    throw err;
+  } finally {
+    conn.release();
+  }
 }
+
+export async function createRoom(input: RoomInput): Promise<Room> {
+  const pool = getPool();
+  const room: Room = {
+    ...input,
+    id: `room-${randomUUID()}`,
+    statusUpdatedAt: nowIso(),
+    createdAt: nowIso(),
+    updatedAt: nowIso(),
+  };
+  await pool.query(
+    `INSERT INTO rooms
+      (id, property_id, code, floor, area_sqm, has_balcony, price_monthly,
+       status, status_updated_at, current_deposit, sub_units,
+       amenities_override, images, description, is_active, created_at, updated_at)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+    [
+      room.id,
+      room.propertyId,
+      room.code,
+      room.floor ?? null,
+      room.areaSqm,
+      room.hasBalcony ? 1 : 0,
+      room.priceMonthly,
+      room.status,
+      room.statusUpdatedAt,
+      room.currentDeposit ? JSON.stringify(room.currentDeposit) : null,
+      room.subUnits ? JSON.stringify(room.subUnits) : null,
+      room.amenitiesOverride ? JSON.stringify(room.amenitiesOverride) : null,
+      JSON.stringify(room.images),
+      room.description ?? null,
+      room.isActive ? 1 : 0,
+      room.createdAt,
+      room.updatedAt,
+    ]
+  );
+  return room;
+}
+
+const ROOM_COLUMN_MAP: Record<string, string> = {
+  propertyId: "property_id",
+  code: "code",
+  floor: "floor",
+  areaSqm: "area_sqm",
+  hasBalcony: "has_balcony",
+  priceMonthly: "price_monthly",
+  description: "description",
+  isActive: "is_active",
+};
+const ROOM_JSON_COLUMN_MAP: Record<string, string> = {
+  subUnits: "sub_units",
+  amenitiesOverride: "amenities_override",
+  images: "images",
+};
 
 /** Generic edit for a room's own fields. Deliberately ignores `status` —
  * status changes for "deposited"/"sold" must go through startDeposit /
@@ -355,12 +573,40 @@ export async function updateRoom(
   id: string,
   input: Partial<Omit<RoomInput, "status">>
 ): Promise<Room | undefined> {
-  return mutateDb((db) => {
-    const room = db.rooms.find((r) => r.id === id);
-    if (!room) return undefined;
-    Object.assign(room, input, { updatedAt: nowIso() });
-    return room;
-  });
+  const pool = getPool();
+  const sets: string[] = [];
+  const values: unknown[] = [];
+
+  for (const [key, column] of Object.entries(ROOM_COLUMN_MAP)) {
+    if (key in input) {
+      const v = (input as Record<string, unknown>)[key];
+      sets.push(`${column} = ?`);
+      values.push(key === "hasBalcony" || key === "isActive" ? (v ? 1 : 0) : v ?? null);
+    }
+  }
+  for (const [key, column] of Object.entries(ROOM_JSON_COLUMN_MAP)) {
+    if (key in input) {
+      const v = (input as Record<string, unknown>)[key];
+      sets.push(`${column} = ?`);
+      values.push(v === undefined ? null : JSON.stringify(v));
+    }
+  }
+  if (sets.length === 0) {
+    const [rows] = await pool.query("SELECT * FROM rooms WHERE id = ?", [id]);
+    const arr = rows as unknown[];
+    return arr.length ? rowToRoom(arr[0]) : undefined;
+  }
+
+  sets.push("updated_at = ?");
+  values.push(nowIso());
+  values.push(id);
+
+  const [result] = await pool.query(`UPDATE rooms SET ${sets.join(", ")} WHERE id = ?`, values);
+  if ((result as { affectedRows: number }).affectedRows === 0) return undefined;
+
+  const [rows] = await pool.query("SELECT * FROM rooms WHERE id = ?", [id]);
+  const arr = rows as unknown[];
+  return arr.length ? rowToRoom(arr[0]) : undefined;
 }
 
 /** Plain manual status change, for transitions with no money attached
@@ -371,37 +617,51 @@ export async function setRoomStatus(
   id: string,
   status: RoomStatus
 ): Promise<Room | { error: string } | undefined> {
-  return mutateDb((db) => {
-    const room = db.rooms.find((r) => r.id === id);
-    if (!room) return undefined;
-    if (status === "deposited" || status === "sold") {
-      return {
-        error:
-          status === "deposited"
-            ? "Dùng chức năng “Nhận cọc” để chuyển sang Đã cọc (cần lưu số tiền/ngày giữ)."
-            : "Dùng chức năng “Chốt hợp đồng” để chuyển sang Đã cho thuê (cần chọn thời hạn hợp đồng để tính hoa hồng).",
-      };
+  if (status === "deposited" || status === "sold") {
+    return {
+      error:
+        status === "deposited"
+          ? "Dùng chức năng “Nhận cọc” để chuyển sang Đã cọc (cần lưu số tiền/ngày giữ)."
+          : "Dùng chức năng “Chốt hợp đồng” để chuyển sang Đã cho thuê (cần chọn thời hạn hợp đồng để tính hoa hồng).",
+    };
+  }
+  const pool = getPool();
+  const conn = await pool.getConnection();
+  try {
+    await conn.beginTransaction();
+    const [rows] = await conn.query("SELECT * FROM rooms WHERE id = ? FOR UPDATE", [id]);
+    const arr = rows as unknown[];
+    if (!arr.length) {
+      await conn.rollback();
+      return undefined;
     }
+    const room = rowToRoom(arr[0]);
     const fromStatus = room.status;
-    room.status = status;
-    room.statusUpdatedAt = nowIso();
-    room.updatedAt = nowIso();
-    room.currentDeposit = undefined;
+    const now = nowIso();
+    await conn.query(
+      "UPDATE rooms SET status = ?, status_updated_at = ?, updated_at = ?, current_deposit = NULL WHERE id = ?",
+      [status, now, now, id]
+    );
     if (fromStatus !== status) {
-      recordEvent(db, { roomId: room.id, fromStatus, toStatus: status, type: "status_change" });
+      await recordEvent(conn, { roomId: id, fromStatus, toStatus: status, type: "status_change" });
     }
-    return room;
-  });
+    await conn.commit();
+    return { ...room, status, statusUpdatedAt: now, updatedAt: now, currentDeposit: undefined };
+  } catch (err) {
+    await conn.rollback();
+    throw err;
+  } finally {
+    conn.release();
+  }
 }
 
 export async function deactivateRoom(id: string): Promise<boolean> {
-  return mutateDb((db) => {
-    const room = db.rooms.find((r) => r.id === id);
-    if (!room) return false;
-    room.isActive = false;
-    room.updatedAt = nowIso();
-    return true;
-  });
+  const pool = getPool();
+  const [result] = await pool.query(
+    "UPDATE rooms SET is_active = 0, updated_at = ? WHERE id = ?",
+    [nowIso(), id]
+  );
+  return (result as { affectedRows: number }).affectedRows > 0;
 }
 
 // --------------------------- Deposit lifecycle ---------------------------
@@ -409,43 +669,60 @@ export async function deactivateRoom(id: string): Promise<boolean> {
 export async function startDeposit(
   roomId: string
 ): Promise<Room | { error: string } | undefined> {
-  return mutateDb((db) => {
-    const room = db.rooms.find((r) => r.id === roomId);
-    if (!room) return undefined;
+  const pool = getPool();
+  const conn = await pool.getConnection();
+  try {
+    await conn.beginTransaction();
+    const [roomRows] = await conn.query("SELECT * FROM rooms WHERE id = ? FOR UPDATE", [roomId]);
+    const roomArr = roomRows as unknown[];
+    if (!roomArr.length) {
+      await conn.rollback();
+      return undefined;
+    }
+    const room = rowToRoom(roomArr[0]);
     if (room.status !== "available") {
+      await conn.rollback();
       return { error: "Chỉ nhận cọc được cho phòng đang Còn trống." };
     }
-    const property = db.properties.find((p) => p.id === room.propertyId);
-    if (!property) return { error: "Không tìm thấy nhà của phòng này." };
+    const property = await getProperty(room.propertyId);
+    if (!property) {
+      await conn.rollback();
+      return { error: "Không tìm thấy nhà của phòng này." };
+    }
 
-    const fromStatus = room.status;
     const depositedAt = nowIso();
-    room.status = "deposited";
-    room.statusUpdatedAt = depositedAt;
-    room.updatedAt = depositedAt;
-    room.currentDeposit = {
+    const currentDeposit = {
       depositedAt,
       holdAmount: property.depositPolicy.holdAmount,
       holdDays: property.depositPolicy.holdDays,
     };
-    recordEvent(db, {
-      roomId: room.id,
-      fromStatus,
+    await conn.query(
+      "UPDATE rooms SET status = 'deposited', status_updated_at = ?, updated_at = ?, current_deposit = ? WHERE id = ?",
+      [depositedAt, depositedAt, JSON.stringify(currentDeposit), roomId]
+    );
+    await recordEvent(conn, {
+      roomId,
+      fromStatus: room.status,
       toStatus: "deposited",
       type: "deposit_started",
-      deposit: {
-        holdAmount: property.depositPolicy.holdAmount,
-        holdDays: property.depositPolicy.holdDays,
-      },
+      occurredAt: depositedAt,
+      deposit: { holdAmount: currentDeposit.holdAmount, holdDays: currentDeposit.holdDays },
     });
-    return room;
-  });
+    await conn.commit();
+    return { ...room, status: "deposited", statusUpdatedAt: depositedAt, updatedAt: depositedAt, currentDeposit };
+  } catch (err) {
+    await conn.rollback();
+    throw err;
+  } finally {
+    conn.release();
+  }
 }
 
 /** The exact worked example the owner gave:
  * hold 2,000,000đ for 5 days => 400,000đ/day. Customer backs out on day 4 =>
  * landlord keeps 400,000 × 4 = 1,600,000 as compensation for holding the
- * room; the remaining 400,000 is split 50/50 (200k sale / 200k landlord). */
+ * room; the remaining 400,000 is split 50/50 (200k sale / 200k landlord).
+ * Pure function, unchanged from the JSON-file version — no DB involved. */
 export function calculateCancellationSettlement(
   holdAmount: number,
   holdDays: number,
@@ -463,8 +740,6 @@ export function calculateCancellationSettlement(
   const landlordCompensation = Math.round(dailyRate * daysHeld);
   const remainder = Math.max(holdAmount - landlordCompensation, 0);
   const saleShareOfRemainder = Math.round((remainder * saleSharePercent) / 100);
-  // Subtract rather than recompute the landlord's cut, so rounding never
-  // makes the two shares add up to more (or less) than the remainder.
   const landlordShareOfRemainder = remainder - saleShareOfRemainder;
 
   return {
@@ -484,14 +759,26 @@ export function calculateCancellationSettlement(
 export async function cancelDeposit(
   roomId: string
 ): Promise<{ room: Room; settlement: CancellationSettlement } | { error: string } | undefined> {
-  return mutateDb((db) => {
-    const room = db.rooms.find((r) => r.id === roomId);
-    if (!room) return undefined;
+  const pool = getPool();
+  const conn = await pool.getConnection();
+  try {
+    await conn.beginTransaction();
+    const [roomRows] = await conn.query("SELECT * FROM rooms WHERE id = ? FOR UPDATE", [roomId]);
+    const roomArr = roomRows as unknown[];
+    if (!roomArr.length) {
+      await conn.rollback();
+      return undefined;
+    }
+    const room = rowToRoom(roomArr[0]);
     if (room.status !== "deposited" || !room.currentDeposit) {
+      await conn.rollback();
       return { error: "Phòng này hiện không ở trạng thái Đã cọc." };
     }
-    const property = db.properties.find((p) => p.id === room.propertyId);
-    if (!property) return { error: "Không tìm thấy nhà của phòng này." };
+    const property = await getProperty(room.propertyId);
+    if (!property) {
+      await conn.rollback();
+      return { error: "Không tìm thấy nhà của phòng này." };
+    }
 
     const now = new Date();
     const settlement = calculateCancellationSettlement(
@@ -503,33 +790,40 @@ export async function cancelDeposit(
       property.depositCancellationPolicy.saleSharePercent
     );
 
-    const fromStatus = room.status;
-    room.status = "available";
-    room.statusUpdatedAt = now.toISOString();
-    room.updatedAt = now.toISOString();
-    room.currentDeposit = undefined;
-
-    recordEvent(db, {
-      roomId: room.id,
-      fromStatus,
+    const nowStr = now.toISOString();
+    await conn.query(
+      "UPDATE rooms SET status = 'available', status_updated_at = ?, updated_at = ?, current_deposit = NULL WHERE id = ?",
+      [nowStr, nowStr, roomId]
+    );
+    await recordEvent(conn, {
+      roomId,
+      fromStatus: room.status,
       toStatus: "available",
       type: "deposit_cancelled",
-      occurredAt: now.toISOString(),
+      occurredAt: nowStr,
       cancellation: settlement,
     });
-
-    return { room, settlement };
-  });
+    await conn.commit();
+    return {
+      room: { ...room, status: "available", statusUpdatedAt: nowStr, updatedAt: nowStr, currentDeposit: undefined },
+      settlement,
+    };
+  } catch (err) {
+    await conn.rollback();
+    throw err;
+  } finally {
+    conn.release();
+  }
 }
 
 // --------------------------- Contract / commission ---------------------------
 
+/** Pure function, unchanged from the JSON-file version — no DB involved. */
 export function calculateCommission(
   priceMonthly: number,
   contractDurationMonths: number,
   commissionPolicy: { contractDurationMonths: number; commissionPercent: number }[]
 ): { commissionPercent: number; commissionAmount: number } {
-  // Exact match first, else the highest tier at or below the chosen duration.
   const exact = commissionPolicy.find(
     (t) => t.contractDurationMonths === contractDurationMonths
   );
@@ -540,7 +834,6 @@ export function calculateCommission(
       .sort((a, b) => b.contractDurationMonths - a.contractDurationMonths)[0];
 
   const commissionPercent = tier?.commissionPercent ?? 0;
-  // ASSUMPTION: % applies to one month's rent — see CommissionTier in src/types.
   const commissionAmount = Math.round((priceMonthly * commissionPercent) / 100);
   return { commissionPercent, commissionAmount };
 }
@@ -554,14 +847,26 @@ export async function signContract(
   roomId: string,
   contractDurationMonths: number
 ): Promise<{ room: Room; settlement: ContractSettlement } | { error: string } | undefined> {
-  return mutateDb((db) => {
-    const room = db.rooms.find((r) => r.id === roomId);
-    if (!room) return undefined;
+  const pool = getPool();
+  const conn = await pool.getConnection();
+  try {
+    await conn.beginTransaction();
+    const [roomRows] = await conn.query("SELECT * FROM rooms WHERE id = ? FOR UPDATE", [roomId]);
+    const roomArr = roomRows as unknown[];
+    if (!roomArr.length) {
+      await conn.rollback();
+      return undefined;
+    }
+    const room = rowToRoom(roomArr[0]);
     if (room.status !== "available" && room.status !== "deposited") {
+      await conn.rollback();
       return { error: "Chỉ chốt hợp đồng được từ trạng thái Còn trống hoặc Đã cọc." };
     }
-    const property = db.properties.find((p) => p.id === room.propertyId);
-    if (!property) return { error: "Không tìm thấy nhà của phòng này." };
+    const property = await getProperty(room.propertyId);
+    if (!property) {
+      await conn.rollback();
+      return { error: "Không tìm thấy nhà của phòng này." };
+    }
 
     const now = new Date();
     const { commissionPercent, commissionAmount } = calculateCommission(
@@ -581,41 +886,49 @@ export async function signContract(
       bonusAmount,
     };
 
-    const fromStatus = room.status;
-    room.status = "sold";
-    room.statusUpdatedAt = now.toISOString();
-    room.updatedAt = now.toISOString();
-    room.currentDeposit = undefined;
-
-    recordEvent(db, {
-      roomId: room.id,
-      fromStatus,
+    const nowStr = now.toISOString();
+    await conn.query(
+      "UPDATE rooms SET status = 'sold', status_updated_at = ?, updated_at = ?, current_deposit = NULL WHERE id = ?",
+      [nowStr, nowStr, roomId]
+    );
+    await recordEvent(conn, {
+      roomId,
+      fromStatus: room.status,
       toStatus: "sold",
       type: "contract_signed",
-      occurredAt: now.toISOString(),
+      occurredAt: nowStr,
       contract: settlement,
     });
-
-    return { room, settlement };
-  });
+    await conn.commit();
+    return {
+      room: { ...room, status: "sold", statusUpdatedAt: nowStr, updatedAt: nowStr, currentDeposit: undefined },
+      settlement,
+    };
+  } catch (err) {
+    await conn.rollback();
+    throw err;
+  } finally {
+    conn.release();
+  }
 }
 
 // ------------------------------- History ---------------------------------
 
 export async function listRoomEvents(roomId: string): Promise<RoomStatusEvent[]> {
-  return withDb((db) =>
-    db.roomStatusEvents
-      .filter((e) => e.roomId === roomId)
-      .sort((a, b) => (a.occurredAt < b.occurredAt ? 1 : -1))
+  const pool = getPool();
+  const [rows] = await pool.query(
+    "SELECT * FROM room_status_events WHERE room_id = ? ORDER BY occurred_at DESC",
+    [roomId]
   );
+  return (rows as unknown[]).map(rowToEvent);
 }
 
 /** All contract_signed / deposit_cancelled events across every room — the
  * data behind the "Hoa hồng & lì xì" admin report. */
 export async function listAllEvents(): Promise<RoomStatusEvent[]> {
-  return withDb((db) =>
-    [...db.roomStatusEvents].sort((a, b) => (a.occurredAt < b.occurredAt ? 1 : -1))
-  );
+  const pool = getPool();
+  const [rows] = await pool.query("SELECT * FROM room_status_events ORDER BY occurred_at DESC");
+  return (rows as unknown[]).map(rowToEvent);
 }
 
 // ------------------------------ Documents ---------------------------------
@@ -624,36 +937,38 @@ export async function addRoomDocument(
   roomId: string,
   doc: { type: DocumentType; fileUrl: string; fileName: string; note?: string }
 ): Promise<RoomDocument | { error: string }> {
-  return mutateDb((db) => {
-    const room = db.rooms.find((r) => r.id === roomId);
-    if (!room) return { error: "Không tìm thấy phòng." };
-    const record: RoomDocument = {
-      id: `doc-${randomUUID()}`,
-      roomId,
-      type: doc.type,
-      fileUrl: doc.fileUrl,
-      fileName: doc.fileName,
-      uploadedAt: nowIso(),
-      note: doc.note,
-    };
-    db.roomDocuments.push(record);
-    return record;
-  });
+  const pool = getPool();
+  const [roomRows] = await pool.query("SELECT id FROM rooms WHERE id = ?", [roomId]);
+  if (!(roomRows as unknown[]).length) return { error: "Không tìm thấy phòng." };
+
+  const record: RoomDocument = {
+    id: `doc-${randomUUID()}`,
+    roomId,
+    type: doc.type,
+    fileUrl: doc.fileUrl,
+    fileName: doc.fileName,
+    uploadedAt: nowIso(),
+    note: doc.note,
+  };
+  await pool.query(
+    `INSERT INTO room_documents (id, room_id, type, file_url, file_name, uploaded_at, note)
+     VALUES (?, ?, ?, ?, ?, ?, ?)`,
+    [record.id, record.roomId, record.type, record.fileUrl, record.fileName, record.uploadedAt, record.note ?? null]
+  );
+  return record;
 }
 
 export async function listRoomDocuments(roomId: string): Promise<RoomDocument[]> {
-  return withDb((db) =>
-    db.roomDocuments
-      .filter((d) => d.roomId === roomId)
-      .sort((a, b) => (a.uploadedAt < b.uploadedAt ? 1 : -1))
+  const pool = getPool();
+  const [rows] = await pool.query(
+    "SELECT * FROM room_documents WHERE room_id = ? ORDER BY uploaded_at DESC",
+    [roomId]
   );
+  return (rows as unknown[]).map(rowToDocument);
 }
 
 export async function deleteRoomDocument(id: string): Promise<boolean> {
-  return mutateDb((db) => {
-    const idx = db.roomDocuments.findIndex((d) => d.id === id);
-    if (idx === -1) return false;
-    db.roomDocuments.splice(idx, 1);
-    return true;
-  });
+  const pool = getPool();
+  const [result] = await pool.query("DELETE FROM room_documents WHERE id = ?", [id]);
+  return (result as { affectedRows: number }).affectedRows > 0;
 }

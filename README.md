@@ -9,42 +9,47 @@ Built with Next.js (App Router) + TypeScript + Tailwind CSS.
 
 See `docs/requirements.md` for the full product requirements this app implements.
 
-## Current data storage: JSON file (temporary, by design)
+## Data storage: MySQL/MariaDB
 
-Per the project's current stage, there is **no real database yet**. All data
-lives in a single JSON file at `data/db.json`, read/written through
-`src/lib/db.ts`. That file is created automatically (from the seed data in
-`src/lib/seed.ts`) the first time the app runs, if it doesn't already exist.
+`src/lib/db.ts` talks to a real MySQL-compatible database (MariaDB works
+identically — same protocol, same `mysql2` driver) via `src/lib/mysqlPool.ts`.
+Schema is in `scripts/schema.sql`; a hybrid design — real columns for anything
+filtered/sorted (status, price, foreign keys, timestamps), JSON columns for
+the nested/variable-shape data that maps 1:1 to the TypeScript types in
+`src/types/index.ts` (amenity lists, deposit/commission/bonus policies, event
+payloads). All money-affecting mutations (deposit start/cancel, contract
+signing, the auto-expiry sweep) run inside a transaction with `FOR UPDATE`
+row locking, so two simultaneous requests can never double-process the same
+room.
 
-This is intentional and safe to run in production short-term, but it has real
-limits worth knowing before relying on it for long:
+### First-time setup (or moving to a fresh database)
 
-- It works fine for one Node process. If you ever run multiple instances behind
-  a load balancer, they will NOT share writes correctly.
-- No proper concurrent-transaction safety — `src/lib/db.ts` serializes writes
-  within one process (a write queue), which prevents corruption from
-  simultaneous admin edits, but it's not a substitute for real ACID transactions.
-- The whole database is one file — back it up (`data/db.json`) regularly.
+1. Create a database + user (MySQL/MariaDB is usually already installed on
+   the VPS — check with `mysqladmin ping` before installing anything new):
+   ```sql
+   CREATE DATABASE phongchothue CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
+   CREATE USER 'phongchothue'@'localhost' IDENTIFIED BY '<a real password>';
+   GRANT ALL PRIVILEGES ON phongchothue.* TO 'phongchothue'@'localhost';
+   FLUSH PRIVILEGES;
+   ```
+2. Add `DB_HOST`/`DB_PORT`/`DB_USER`/`DB_PASSWORD`/`DB_NAME` to `.env` (see
+   `.env.example`).
+3. Run `npm run db:migrate` — creates the tables (`CREATE TABLE IF NOT
+   EXISTS`, never drops/alters anything) and seeds the initial property/rooms
+   from `src/lib/seed.ts` **only if the `properties` table is completely
+   empty**. Safe to re-run any time; it will never duplicate or overwrite
+   real data.
+4. `npm run build && npm run start` (or restart via pm2) as usual.
 
-### Migrating to a real database later
+Uploaded files (room photos, admin documents) still live on disk under
+`data/uploads` / `data/documents` — only the *records about* them moved to
+the database, not the file bytes themselves.
 
-When you're ready to move to Postgres/MySQL/etc. on the VPS:
+### Backups
 
-1. The types in `src/types/index.ts` are the schema — they already match the
-   PRD's data model, including the versioned `utilityFeeVersions` (so past
-   rates are never overwritten) and the `RoomStatus` enum.
-2. Every read/write in the app goes through the functions exported by
-   `src/lib/db.ts` (`listRooms`, `getRoom`, `createRoom`, `updateRoom`,
-   `setRoomStatus`, `listProperties`, `getProperty`, `createProperty`,
-   `updateProperty`, `addUtilityFeeVersion`, etc.).
-3. To swap the backend, rewrite the *internals* of those functions to talk to
-   your real database instead of `data/db.json`, but keep the same function
-   names and return types. Nothing in `src/app/**` or `src/components/**`
-   needs to change.
-4. A reasonable schema to create in the real database is one table per
-   top-level type (`properties`, `rooms`, `utility_fee_versions`) with
-   `rooms.property_id` and `utility_fee_versions.property_id` as foreign keys —
-   this mirrors the JSON shape closely.
+Everything that matters is in MySQL now — back up with `mysqldump` (plus the
+`data/uploads` and `data/documents` folders for the actual files) instead of
+copying `data/db.json`, which no longer exists once you've migrated.
 
 ## Environment variables
 
