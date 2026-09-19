@@ -176,3 +176,61 @@ These are suggestions, not hard constraints — an implementing AI/team may prop
 ---
 
 *Reference design note: a prior interactive mockup ("Lộ Trình.vn" style OTA hotel-search demo) was reviewed for UI inspiration. Its card layout, detail-page gallery, and design tokens (colors/typography/spacing) are reusable as visual reference. Its search-by-date, online booking/checkout, and guest-review features are NOT applicable and must not be carried into this product — see Section 3.3.*
+
+---
+
+## 7. Addendum v2.0 — Roles, deposit lifecycle, commission/bonus, documents
+
+This answers Open Question #3 above ("is a second admin role needed at launch") and supersedes the `deposit_policy` / `promotion` rows in the §2 tables. Implemented in `src/types/index.ts` and `src/lib/db.ts`.
+
+### 7.1 Roles
+
+Three parties, only two of which touch the software:
+
+- **Customer** (khách) — anonymous public visitor. Only sees `PublicProperty`/`PublicRoom` (see `toPublicProperty`/`toPublicRoom` in `src/lib/db.ts`): no commission %, no landlord contact info, no "lì xì" bonus, no deposit-cancellation split. Every public page/API route must go through these sanitizers, never hand back a raw `Property`/`Room`.
+- **Admin** (aka **Sale**) — the one logged-in role today (single shared password, see `src/lib/auth.ts`). Sees everything: commission earned, lì xì, landlord contact, full history.
+- **Chủ nhà** (landlord) — a third party who never logs in. The Sale calls/Zalos them directly using `Property.landlordContactPhone` / `landlordZalo` (internal-only fields).
+
+A dedicated "Sale" login distinct from "Admin" was not built — there is still only one password/session. If multiple sales agents need separate logins/attribution later, that is a real gap (see §7.6).
+
+### 7.2 Deposit lifecycle (4 separate policy fields, `DepositPolicy`)
+
+1. `holdAmount` (VND) + `holdDays` — a small fixed hold-fee to reserve a room while the customer decides. Snapshotted onto the room as `Room.currentDeposit` the moment status becomes `deposited` (via `startDeposit`), so a later edit to the property's policy never rewrites terms a customer already agreed to.
+2. `securityDepositMonths` — refundable security deposit at contract signing, in months of rent (separate field).
+3. `prepaidRentMonths` — months of rent prepaid at signing (separate field, not the same as #2).
+
+Only one active deposit per room at a time — this follows room `status` directly (`available → deposited → sold`, or back to `available` on cancel/expiry), no separate "deals" table.
+
+**Auto-expiry:** if the customer doesn't return within `holdDays`, the room automatically reverts to `available` the next time it's read (`sweepExpiredDeposits`, called from every `listRooms`/`getRoom`) and a `deposit_expired` history event is logged — landlord keeps the full hold amount, no split. The admin UI shows a live countdown (`DepositCountdown.tsx`) while `deposited`.
+
+**Active cancellation** (customer comes back and explicitly cancels before expiry, via "Huỷ cọc" in the admin UI) uses a different formula — `calculateCancellationSettlement` in `src/lib/db.ts`:
+
+```
+dailyRate = holdAmount / holdDays
+landlordCompensation = round(dailyRate × daysHeld)   // days actually held, capped at holdDays
+remainder = holdAmount − landlordCompensation
+saleShare = round(remainder × saleSharePercent / 100)     // depositCancellationPolicy, internal-only
+landlordShare = remainder − saleShare                      // subtracted, not independently rounded, so the two always sum exactly to remainder
+```
+
+Worked example from the business owner (verified against a live test in this build): hold 2,000,000đ for 5 days → 400,000đ/day. Customer cancels on day 4 → landlord keeps 400,000 × 4 = 1,600,000 as compensation, remaining 400,000 splits 50/50 → sale 200,000 / landlord 200,000 (landlord total 1,800,000). This settlement is internal-only and must never be shown to the customer.
+
+### 7.3 Commission vs. lì xì (kept strictly separate, both internal-only)
+
+- **Commission** (`Property.commissionPolicy`, a `CommissionTier[]` of `{contractDurationMonths, commissionPercent}`) is computed at contract signing (`signContract` → `calculateCommission`) and shown to the Sale as both percent and VND, e.g. "50% = 3.100.000đ". **Assumption flagged in code** (`CommissionTier` doc comment): the percent applies to *one month's rent*, not the full contract value — confirm with the landlords' actual payout data if this ever looks wrong.
+- **Lì xì** (`Property.saleBonusPolicy`, `SaleBonusPolicy`) is a bonus the landlord pays the sale for closing within a date window (`validFrom`/`validTo`). Computed alongside commission at contract signing. **Never shown to the customer** — confirmed explicitly by the business owner.
+- The active-cancellation sale share (§7.2) is a third, separate money flow — also internal-only.
+
+### 7.4 History / audit log (`RoomStatusEvent`, append-only, never mutated/deleted)
+
+Every status transition is recorded in `roomStatusEvents`: plain status changes, `deposit_started`, `deposit_cancelled` (with the full settlement), `deposit_expired`, and `contract_signed` (with the full commission/bonus settlement). Visible per-room at `/admin/rooms/[id]/history`, and aggregated across all rooms at `/admin/commissions` (backed by `GET /api/commissions`) for the "hoa hồng & lì xì" report.
+
+### 7.5 Documents (`RoomDocument`, 5 fixed types)
+
+Upload or photo-capture support for exactly 5 paperwork types (`DOCUMENT_TYPES` in `src/types/index.ts`): giấy xác nhận cọc, hợp đồng thuê phòng, phụ phí, giấy xác nhận thanh toán hoa hồng cho sale, phụ lục hợp đồng thuê phòng. Files go through a storage path (`saveDocumentFile`/`DOCUMENTS_DIR`, served only via the admin-gated `/api/documents/file/[filename]`) that is deliberately **separate** from public room photos (`UPLOADS_DIR`, public at `/api/uploads/[filename]`) — legal/financial paperwork must never be reachable on the same unauthenticated path as a marketing photo. Managed per-room in the admin room-edit page (`RoomDocuments.tsx`).
+
+### 7.6 Known gaps to flag before/after the "AI QC" pass
+
+- Single shared admin password/session — no per-sale-agent login or attribution on who closed which deal (history events aren't tagged with a user, since there's only one).
+- On Vercel, `DATA_DIR` points at `/tmp`, which is wiped on cold start/redeploy — fine for a short-lived demo, **not** safe once real financial/legal data (deposits, signed contracts, uploaded documents) is involved. Confirmed acceptable short-term because the plan is to move to a VPS soon, where `data/` persists normally across restarts — but this must happen before the app is used for real transactions, not after.
+- No automated tests; correctness of the money math above was verified manually via curl against the exact worked example the owner provided (see git history / PR description for the transcript).

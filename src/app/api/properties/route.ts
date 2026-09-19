@@ -1,12 +1,17 @@
 import { NextRequest, NextResponse } from "next/server";
-import { createProperty, listProperties, type PropertyInput } from "@/lib/db";
-import { requireAdmin } from "@/lib/apiAuth";
+import { createProperty, listProperties, toPublicProperty, type PropertyInput } from "@/lib/db";
+import { isAdminRequest, requireAdmin } from "@/lib/apiAuth";
 
+// Public endpoint — non-admin callers only get the customer-safe shape
+// (no commission %, no landlord contact, no "lì xì").
 export async function GET(request: NextRequest) {
   const { searchParams } = new URL(request.url);
   const includeInactive = searchParams.get("includeInactive") === "true";
   const properties = await listProperties({ includeInactive });
-  return NextResponse.json({ properties });
+  const admin = isAdminRequest(request);
+  return NextResponse.json({
+    properties: admin ? properties : properties.map(toPublicProperty),
+  });
 }
 
 export async function POST(request: NextRequest) {

@@ -1,12 +1,14 @@
 import { NextRequest, NextResponse } from "next/server";
-import { createRoom, listRooms, type RoomInput } from "@/lib/db";
-import { requireAdmin } from "@/lib/apiAuth";
+import { createRoom, listRooms, toPublicRoom, type RoomInput } from "@/lib/db";
+import { isAdminRequest, requireAdmin } from "@/lib/apiAuth";
 import type { RoomFilter, RoomStatus } from "@/types";
 import { ROOM_STATUSES } from "@/types";
 import { bucketByKey } from "@/lib/priceBuckets";
 
 // GET /api/rooms?status=available,deposited&priceBucket=3-4&address=phu+thuan
-// GET /api/rooms?propertyId=...
+// Public endpoint — an unauthenticated caller only ever gets the customer-safe
+// shape (toPublicRoom): no commission %, no landlord contact, no "lì xì".
+// An admin session gets the full internal shape.
 export async function GET(request: NextRequest) {
   const { searchParams } = new URL(request.url);
 
@@ -23,9 +25,7 @@ export async function GET(request: NextRequest) {
     const statuses = statusParam
       .split(",")
       .map((s) => s.trim())
-      .filter((s): s is RoomStatus =>
-        (ROOM_STATUSES as string[]).includes(s)
-      );
+      .filter((s): s is RoomStatus => (ROOM_STATUSES as string[]).includes(s));
     if (statuses.length > 0) filter.status = statuses;
   }
 
@@ -44,7 +44,8 @@ export async function GET(request: NextRequest) {
   }
 
   const rooms = await listRooms(filter);
-  return NextResponse.json({ rooms });
+  const admin = isAdminRequest(request);
+  return NextResponse.json({ rooms: admin ? rooms : rooms.map(toPublicRoom) });
 }
 
 export async function POST(request: NextRequest) {

@@ -15,6 +15,8 @@ export function buildSeedDatabase(): Database {
         addressNew: "Khu phố 2, Phường Phú Thuận, Thành phố Hồ Chí Minh",
         addressOld: "Quận 7, Thành phố Hồ Chí Minh",
         contactPhone: "0768654627",
+        landlordName: "Chị Hoa (chủ nhà Nam Long)",
+        landlordContactPhone: "0909000000",
         amenitiesShared: [
           "Đầy đủ nội thất: tủ lạnh, máy lạnh, máy giặt, giường, bếp, tủ quần áo, bàn ghế",
           "WC riêng",
@@ -37,18 +39,26 @@ export function buildSeedDatabase(): Database {
           },
         ],
         depositPolicy: {
-          depositAmount: 2000000,
+          holdAmount: 2000000,
           holdDays: 7,
-          forfeitureRule:
+          securityDepositMonths: 1,
+          prepaidRentMonths: 1,
+          customerNote:
             "Xem phòng chốt thì giữ 2 triệu, giữ 7 ngày nếu không quay lại mất cọc. Khách vào ký hợp đồng và đóng 1 tháng tiền thuê nhà.",
-          contractDepositMonths: 1,
+        },
+        depositCancellationPolicy: {
+          landlordSharePercent: 50,
+          saleSharePercent: 50,
+          note:
+            "Khách chủ động huỷ cọc trước hạn: trừ theo số ngày đã giữ (tiền giữ chỗ / số ngày giữ), phần còn lại chia 50/50 chủ nhà và sale.",
         },
         commissionPolicy: [
           { contractDurationMonths: 6, commissionPercent: 50 },
           { contractDurationMonths: 12, commissionPercent: 80 },
         ],
-        promotion: {
+        saleBonusPolicy: {
           description: "Lì xì ngay 500k / phòng giao dịch thành công khách cọc",
+          amount: 500000,
           validFrom: "2026-07-11",
           validTo: "2026-07-30",
         },
@@ -144,5 +154,7 @@ export function buildSeedDatabase(): Database {
         updatedAt: now,
       },
     ],
+    roomStatusEvents: [],
+    roomDocuments: [],
   };
 }

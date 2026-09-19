@@ -117,13 +117,35 @@ src/
 - No nightly/date-range search — this is long-term monthly rental.
 - No visitor accounts or saved favorites.
 
+## Roles, deposits, commission & documents (v2)
+
+The app now distinguishes three parties — see `docs/requirements.md` §7 for
+the full spec:
+
+- **Customer** — public visitor, only ever sees the sanitized `PublicProperty`/
+  `PublicRoom` shape (`toPublicProperty`/`toPublicRoom` in `src/lib/db.ts`):
+  no commission, no landlord contact, no "lì xì", no cancellation split.
+- **Admin (Sale)** — the one logged-in role; sees everything, including
+  commission (`% và số tiền`), lì xì, landlord contact, and full history.
+- **Chủ nhà (landlord)** — never logs in; Sale reaches them via
+  `Property.landlordContactPhone`/`landlordZalo` (internal-only fields).
+
+Deposit is a 4-field policy (`DepositPolicy`) with a live countdown while a
+room is `deposited`, auto-reverting to `available` on expiry, and a distinct
+50/50-style settlement formula for an *active* cancellation (see
+`calculateCancellationSettlement`). Every status change is logged to an
+append-only history (`/admin/rooms/[id]/history`), and commission + lì xì are
+aggregated at `/admin/commissions`. Legal/financial documents (5 fixed types)
+upload through `/api/documents/upload` and are served only to logged-in
+admins at `/api/documents/file/[filename]` — a separate, auth-gated path from
+public room photos (`/api/uploads/[filename]`).
+
 ## Known limitations to revisit
 
-- Room/property photos are plain URLs entered by the admin (one per line) —
-  there's no file upload yet. On the VPS you can either paste URLs to images
-  hosted elsewhere, or add a small upload endpoint that saves into `public/`
-  and returns its URL.
-- Admin is single-password, single-role. The PRD flags that a second role
-  (sales agent, limited access) may be needed later — the auth layer
-  (`src/lib/auth.ts`) is intentionally simple so it doesn't fight that change,
-  but it doesn't implement it yet.
+- Single shared admin password/session — no per-sale-agent login, so history
+  events aren't attributed to a specific person.
+- On Vercel, `DATA_DIR` resolves to `/tmp`, which does not survive a cold
+  start or redeploy. That's an acceptable short-term risk for a demo, but
+  **not** once real deposits/contracts/documents are involved — this needs a
+  VPS (where `data/` persists normally) or a real database before relying on
+  it for actual transactions.

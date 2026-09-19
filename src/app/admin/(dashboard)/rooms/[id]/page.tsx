@@ -1,6 +1,7 @@
 import { notFound } from "next/navigation";
 import { getRoom, listProperties } from "@/lib/db";
 import RoomForm from "@/components/RoomForm";
+import RoomDocuments from "@/components/RoomDocuments";
 
 export const dynamic = "force-dynamic";
 
@@ -22,6 +23,7 @@ export default async function EditRoomPage({
         Sửa phòng {room.code}
       </h1>
       <RoomForm room={room} properties={properties} />
+      <RoomDocuments roomId={room.id} />
     </div>
   );
 }

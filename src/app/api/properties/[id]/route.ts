@@ -1,14 +1,21 @@
 import { NextRequest, NextResponse } from "next/server";
-import { deactivateProperty, getProperty, updateProperty, type PropertyInput } from "@/lib/db";
-import { requireAdmin } from "@/lib/apiAuth";
+import {
+  deactivateProperty,
+  getProperty,
+  toPublicProperty,
+  updateProperty,
+  type PropertyInput,
+} from "@/lib/db";
+import { isAdminRequest, requireAdmin } from "@/lib/apiAuth";
 
 type Params = { params: Promise<{ id: string }> };
 
-export async function GET(_request: NextRequest, { params }: Params) {
+export async function GET(request: NextRequest, { params }: Params) {
   const { id } = await params;
   const property = await getProperty(id);
   if (!property) return NextResponse.json({ error: "Not found" }, { status: 404 });
-  return NextResponse.json({ property });
+  const admin = isAdminRequest(request);
+  return NextResponse.json({ property: admin ? property : toPublicProperty(property) });
 }
 
 export async function PUT(request: NextRequest, { params }: Params) {

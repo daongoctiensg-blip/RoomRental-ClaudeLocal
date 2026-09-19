@@ -9,16 +9,24 @@ type FormState = {
   addressNew: string;
   addressOld: string;
   contactPhone: string;
+  landlordName: string;
+  landlordContactPhone: string;
+  landlordZalo: string;
   amenitiesShared: string; // newline-separated in the UI
   transportNotes: string; // newline-separated in the UI
   images: string; // newline-separated URLs
-  depositAmount: number;
+  holdAmount: number;
   holdDays: number;
-  forfeitureRule: string;
-  contractDepositMonths: number;
-  promotionDescription: string;
-  promotionValidFrom: string;
-  promotionValidTo: string;
+  securityDepositMonths: number;
+  prepaidRentMonths: number;
+  customerNote: string;
+  cancellationLandlordPercent: number;
+  cancellationSalePercent: number;
+  cancellationNote: string;
+  bonusDescription: string;
+  bonusAmount: number;
+  bonusValidFrom: string;
+  bonusValidTo: string;
   electricityPricePerKwh: number;
   waterPricePerPerson: number;
   serviceFeePerMonth: number;
@@ -40,16 +48,24 @@ function toFormState(property?: Property): FormState {
     addressNew: property?.addressNew ?? "",
     addressOld: property?.addressOld ?? "",
     contactPhone: property?.contactPhone ?? "",
+    landlordName: property?.landlordName ?? "",
+    landlordContactPhone: property?.landlordContactPhone ?? "",
+    landlordZalo: property?.landlordZalo ?? "",
     amenitiesShared: (property?.amenitiesShared ?? []).join("\n"),
     transportNotes: (property?.transportNotes ?? []).join("\n"),
     images: (property?.images ?? []).join("\n"),
-    depositAmount: property?.depositPolicy.depositAmount ?? 2000000,
+    holdAmount: property?.depositPolicy.holdAmount ?? 2000000,
     holdDays: property?.depositPolicy.holdDays ?? 7,
-    forfeitureRule: property?.depositPolicy.forfeitureRule ?? "",
-    contractDepositMonths: property?.depositPolicy.contractDepositMonths ?? 1,
-    promotionDescription: property?.promotion?.description ?? "",
-    promotionValidFrom: property?.promotion?.validFrom ?? "",
-    promotionValidTo: property?.promotion?.validTo ?? "",
+    securityDepositMonths: property?.depositPolicy.securityDepositMonths ?? 1,
+    prepaidRentMonths: property?.depositPolicy.prepaidRentMonths ?? 1,
+    customerNote: property?.depositPolicy.customerNote ?? "",
+    cancellationLandlordPercent: property?.depositCancellationPolicy.landlordSharePercent ?? 50,
+    cancellationSalePercent: property?.depositCancellationPolicy.saleSharePercent ?? 50,
+    cancellationNote: property?.depositCancellationPolicy.note ?? "",
+    bonusDescription: property?.saleBonusPolicy?.description ?? "",
+    bonusAmount: property?.saleBonusPolicy?.amount ?? 0,
+    bonusValidFrom: property?.saleBonusPolicy?.validFrom ?? "",
+    bonusValidTo: property?.saleBonusPolicy?.validTo ?? "",
     electricityPricePerKwh: fee?.electricityPricePerKwh ?? 0,
     waterPricePerPerson: fee?.waterPricePerPerson ?? 0,
     serviceFeePerMonth: fee?.serviceFeePerMonth ?? 0,
@@ -112,21 +128,31 @@ export default function PropertyForm({ property }: { property?: Property }) {
       addressNew: form.addressNew,
       addressOld: form.addressOld || undefined,
       contactPhone: form.contactPhone,
+      landlordName: form.landlordName || undefined,
+      landlordContactPhone: form.landlordContactPhone || undefined,
+      landlordZalo: form.landlordZalo || undefined,
       amenitiesShared: splitLines(form.amenitiesShared),
       transportNotes: splitLines(form.transportNotes),
       images: splitLines(form.images),
       depositPolicy: {
-        depositAmount: Number(form.depositAmount),
+        holdAmount: Number(form.holdAmount),
         holdDays: Number(form.holdDays),
-        forfeitureRule: form.forfeitureRule,
-        contractDepositMonths: Number(form.contractDepositMonths),
+        securityDepositMonths: Number(form.securityDepositMonths),
+        prepaidRentMonths: Number(form.prepaidRentMonths),
+        customerNote: form.customerNote || undefined,
+      },
+      depositCancellationPolicy: {
+        landlordSharePercent: Number(form.cancellationLandlordPercent),
+        saleSharePercent: Number(form.cancellationSalePercent),
+        note: form.cancellationNote || undefined,
       },
       commissionPolicy: commission,
-      promotion: form.promotionDescription
+      saleBonusPolicy: form.bonusDescription
         ? {
-            description: form.promotionDescription,
-            validFrom: form.promotionValidFrom,
-            validTo: form.promotionValidTo,
+            description: form.bonusDescription,
+            amount: Number(form.bonusAmount),
+            validFrom: form.bonusValidFrom,
+            validTo: form.bonusValidTo,
           }
         : undefined,
       isActive: property?.isActive ?? true,
@@ -203,11 +229,35 @@ export default function PropertyForm({ property }: { property?: Property }) {
             className={inputClass}
           />
         </Field>
-        <Field label="Số điện thoại liên hệ">
+        <Field label="Số điện thoại liên hệ (công khai — khách gọi/Zalo số này)">
           <input
             required
             value={form.contactPhone}
             onChange={(e) => update("contactPhone", e.target.value)}
+            className={inputClass}
+          />
+        </Field>
+      </Section>
+
+      <Section title="Thông tin chủ nhà (nội bộ — KHÔNG hiện cho khách)">
+        <Field label="Tên chủ nhà">
+          <input
+            value={form.landlordName}
+            onChange={(e) => update("landlordName", e.target.value)}
+            className={inputClass}
+          />
+        </Field>
+        <Field label="SĐT chủ nhà (để gọi hỏi còn phòng / báo có khách tới)">
+          <input
+            value={form.landlordContactPhone}
+            onChange={(e) => update("landlordContactPhone", e.target.value)}
+            className={inputClass}
+          />
+        </Field>
+        <Field label="Zalo chủ nhà (nếu khác số điện thoại)">
+          <input
+            value={form.landlordZalo}
+            onChange={(e) => update("landlordZalo", e.target.value)}
             className={inputClass}
           />
         </Field>
@@ -279,44 +329,96 @@ export default function PropertyForm({ property }: { property?: Property }) {
         </p>
       </Section>
 
-      <Section title="Chính sách cọc">
-        <Field label="Số tiền giữ chỗ (VND)">
-          <input
-            type="number"
-            value={form.depositAmount}
-            onChange={(e) => update("depositAmount", Number(e.target.value))}
-            className={inputClass}
-          />
-        </Field>
-        <Field label="Số ngày giữ chỗ">
-          <input
-            type="number"
-            value={form.holdDays}
-            onChange={(e) => update("holdDays", Number(e.target.value))}
-            className={inputClass}
-          />
-        </Field>
-        <Field label="Số tháng tiền cọc khi ký hợp đồng">
-          <input
-            type="number"
-            value={form.contractDepositMonths}
-            onChange={(e) =>
-              update("contractDepositMonths", Number(e.target.value))
-            }
-            className={inputClass}
-          />
-        </Field>
-        <Field label="Điều khoản mất cọc / chính sách (mô tả)">
+      <Section title="Chính sách cọc (khách nhìn thấy)">
+        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+          <Field label="Cọc giữ phòng (VND) — đóng trước khi quyết định">
+            <input
+              type="number"
+              value={form.holdAmount}
+              onChange={(e) => update("holdAmount", Number(e.target.value))}
+              className={inputClass}
+            />
+          </Field>
+          <Field label="Thời hạn giữ cọc (số ngày)">
+            <input
+              type="number"
+              value={form.holdDays}
+              onChange={(e) => update("holdDays", Number(e.target.value))}
+              className={inputClass}
+            />
+          </Field>
+          <Field label="Giá trị cọc khi ký hợp đồng (tháng tiền thuê)">
+            <input
+              type="number"
+              value={form.securityDepositMonths}
+              onChange={(e) => update("securityDepositMonths", Number(e.target.value))}
+              className={inputClass}
+            />
+          </Field>
+          <Field label="Thanh toán trước khi ký (tháng tiền thuê)">
+            <input
+              type="number"
+              value={form.prepaidRentMonths}
+              onChange={(e) => update("prepaidRentMonths", Number(e.target.value))}
+              className={inputClass}
+            />
+          </Field>
+        </div>
+        <Field label="Ghi chú ngắn hiển thị cho khách (vd: giữ 7 ngày nếu không quay lại mất cọc)">
           <textarea
-            value={form.forfeitureRule}
-            onChange={(e) => update("forfeitureRule", e.target.value)}
+            value={form.customerNote}
+            onChange={(e) => update("customerNote", e.target.value)}
             rows={2}
             className={inputClass}
           />
         </Field>
       </Section>
 
-      <Section title="Hoa hồng theo thời hạn hợp đồng">
+      <Section title="Chính sách huỷ cọc (nội bộ — KHÔNG hiện cho khách)">
+        <p className="text-xs text-slate-400">
+          Áp dụng khi khách chủ động huỷ cọc TRƯỚC khi hết hạn giữ phòng: chủ
+          nhà giữ lại phần tương ứng số ngày đã giữ (tiền giữ chỗ ÷ số ngày
+          giữ × số ngày đã qua), phần còn lại chia theo tỉ lệ dưới đây. Nếu
+          khách không quay lại (hết hạn tự động), chủ nhà giữ toàn bộ, không
+          chia theo tỉ lệ này.
+        </p>
+        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+          <Field label="Phần còn lại — chủ nhà (%)">
+            <input
+              type="number"
+              value={form.cancellationLandlordPercent}
+              onChange={(e) =>
+                update("cancellationLandlordPercent", Number(e.target.value))
+              }
+              className={inputClass}
+            />
+          </Field>
+          <Field label="Phần còn lại — sale (%)">
+            <input
+              type="number"
+              value={form.cancellationSalePercent}
+              onChange={(e) =>
+                update("cancellationSalePercent", Number(e.target.value))
+              }
+              className={inputClass}
+            />
+          </Field>
+        </div>
+        <Field label="Ghi chú thêm (nội bộ)">
+          <textarea
+            value={form.cancellationNote}
+            onChange={(e) => update("cancellationNote", e.target.value)}
+            rows={2}
+            className={inputClass}
+          />
+        </Field>
+      </Section>
+
+      <Section title="Hoa hồng theo thời hạn hợp đồng (nội bộ)">
+        <p className="text-xs text-slate-400">
+          % tính trên 1 tháng tiền thuê của phòng, không phải trên tổng giá
+          trị hợp đồng.
+        </p>
         <div className="flex flex-col gap-2">
           {commission.map((tier, i) => (
             <div key={i} className="flex items-center gap-2">
@@ -376,11 +478,19 @@ export default function PropertyForm({ property }: { property?: Property }) {
         </div>
       </Section>
 
-      <Section title="Khuyến mãi (không bắt buộc)">
+      <Section title="Lì xì / thưởng cho sale (nội bộ — không bắt buộc)">
         <Field label="Mô tả">
           <input
-            value={form.promotionDescription}
-            onChange={(e) => update("promotionDescription", e.target.value)}
+            value={form.bonusDescription}
+            onChange={(e) => update("bonusDescription", e.target.value)}
+            className={inputClass}
+          />
+        </Field>
+        <Field label="Số tiền (VND)">
+          <input
+            type="number"
+            value={form.bonusAmount}
+            onChange={(e) => update("bonusAmount", Number(e.target.value))}
             className={inputClass}
           />
         </Field>
@@ -388,16 +498,16 @@ export default function PropertyForm({ property }: { property?: Property }) {
           <Field label="Từ ngày">
             <input
               type="date"
-              value={form.promotionValidFrom}
-              onChange={(e) => update("promotionValidFrom", e.target.value)}
+              value={form.bonusValidFrom}
+              onChange={(e) => update("bonusValidFrom", e.target.value)}
               className={inputClass}
             />
           </Field>
           <Field label="Đến ngày">
             <input
               type="date"
-              value={form.promotionValidTo}
-              onChange={(e) => update("promotionValidTo", e.target.value)}
+              value={form.bonusValidTo}
+              onChange={(e) => update("bonusValidTo", e.target.value)}
               className={inputClass}
             />
           </Field>

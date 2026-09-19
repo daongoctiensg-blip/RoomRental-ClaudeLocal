@@ -1,6 +1,6 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
-import { getRoom, getCurrentUtilityFee } from "@/lib/db";
+import { getRoom, getCurrentUtilityFee, toPublicRoom } from "@/lib/db";
 import StatusBadge from "@/components/StatusBadge";
 import RoomPhoto from "@/components/RoomPhoto";
 import { formatVnd, telHref, zaloHref } from "@/lib/format";
@@ -13,8 +13,11 @@ export default async function RoomDetailPage({
   params: Promise<{ id: string }>;
 }) {
   const { id } = await params;
-  const room = await getRoom(id);
-  if (!room) notFound();
+  const fullRoom = await getRoom(id);
+  if (!fullRoom) notFound();
+  // Public page — always render the sanitized shape (no commission, no
+  // landlord contact, no "lì xì"), never the raw admin data.
+  const room = toPublicRoom(fullRoom);
 
   const property = room.property;
   const amenities = room.amenitiesOverride ?? property.amenitiesShared;
@@ -157,27 +160,29 @@ export default async function RoomDetailPage({
                   />
                 </dl>
               ) : null}
-              <p className="mt-4 text-sm text-slate-600">
-                Đặt cọc giữ chỗ: {formatVnd(property.depositPolicy.depositAmount)} —
-                giữ {property.depositPolicy.holdDays} ngày.
-              </p>
-              <p className="text-xs text-slate-400">
-                {property.depositPolicy.forfeitureRule}
-              </p>
+              <dl className="mt-4 grid grid-cols-1 gap-3 text-sm sm:grid-cols-3">
+                <Fact
+                  label="Cọc giữ phòng"
+                  value={`${formatVnd(property.depositPolicy.holdAmount)} (giữ ${property.depositPolicy.holdDays} ngày)`}
+                />
+                <Fact
+                  label="Cọc khi ký hợp đồng"
+                  value={`${property.depositPolicy.securityDepositMonths} tháng tiền thuê`}
+                />
+                <Fact
+                  label="Thanh toán trước khi ký"
+                  value={`${property.depositPolicy.prepaidRentMonths} tháng tiền thuê`}
+                />
+              </dl>
+              {property.depositPolicy.customerNote ? (
+                <p className="mt-3 text-xs text-slate-400">
+                  {property.depositPolicy.customerNote}
+                </p>
+              ) : null}
             </section>
           </div>
 
           <aside className="flex flex-col gap-4 lg:sticky lg:top-6 lg:self-start">
-            {property.promotion ? (
-              <div className="rounded-xl bg-[color:var(--color-accent-light)] p-4 text-sm text-[color:var(--color-accent-dark)]">
-                🎉 {property.promotion.description}
-                <div className="mt-1 text-xs opacity-80">
-                  Áp dụng {property.promotion.validFrom} –{" "}
-                  {property.promotion.validTo}
-                </div>
-              </div>
-            ) : null}
-
             <div className="rounded-xl bg-white p-5 shadow-sm ring-1 ring-black/5">
               <div className="text-3xl font-bold text-[color:var(--color-accent-dark)]">
                 {formatVnd(room.priceMonthly)}

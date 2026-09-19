@@ -2,8 +2,7 @@
 
 import { useRef, useState } from "react";
 import { useRouter } from "next/navigation";
-import type { Property, Room, RoomStatus, SubUnit } from "@/types";
-import { ROOM_STATUSES, ROOM_STATUS_LABEL } from "@/types";
+import type { Property, Room, SubUnit } from "@/types";
 
 function splitLines(value: string): string[] {
   return value
@@ -30,7 +29,6 @@ export default function RoomForm({
   const [areaSqm, setAreaSqm] = useState(room?.areaSqm ?? 0);
   const [hasBalcony, setHasBalcony] = useState(room?.hasBalcony ?? false);
   const [priceMonthly, setPriceMonthly] = useState(room?.priceMonthly ?? 0);
-  const [status, setStatus] = useState<RoomStatus>(room?.status ?? "available");
   const [description, setDescription] = useState(room?.description ?? "");
   const [images, setImages] = useState((room?.images ?? []).join("\n"));
   const [amenitiesOverride, setAmenitiesOverride] = useState(
@@ -82,7 +80,7 @@ export default function RoomForm({
       areaSqm: Number(areaSqm),
       hasBalcony,
       priceMonthly: Number(priceMonthly),
-      status,
+      status: room?.status ?? "available",
       description: description || undefined,
       images: splitLines(images),
       amenitiesOverride:
@@ -175,20 +173,12 @@ export default function RoomForm({
             />
           </label>
 
-          <label className="flex flex-col gap-1">
-            <span className="text-sm font-medium text-slate-700">Trạng thái</span>
-            <select
-              value={status}
-              onChange={(e) => setStatus(e.target.value as RoomStatus)}
-              className={inputClass}
-            >
-              {ROOM_STATUSES.map((s) => (
-                <option key={s} value={s}>
-                  {ROOM_STATUS_LABEL[s]}
-                </option>
-              ))}
-            </select>
-          </label>
+          {room ? (
+            <p className="flex flex-col justify-end gap-1 text-xs text-slate-400">
+              Trạng thái phòng được đổi ở trang danh sách (Nhận cọc / Chốt hợp
+              đồng / Sửa chữa…), không sửa ở đây.
+            </p>
+          ) : null}
 
           <label className="flex items-center gap-2">
             <input
