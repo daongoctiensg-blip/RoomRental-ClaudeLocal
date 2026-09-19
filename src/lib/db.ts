@@ -21,7 +21,9 @@ import { buildSeedDatabase } from "@/lib/seed";
 // the app (API routes, pages) keeps working untouched.
 // ---------------------------------------------------------------------------
 
-const DATA_DIR = path.join(process.cwd(), "data");
+const DATA_DIR = process.env.VERCEL
+  ? path.join("/tmp", "room-rental-data") // Vercel: chỉ /tmp ghi được, còn lại là read-only
+  : path.join(process.cwd(), "data");     // VPS: giữ nguyên chỗ cũ, bền qua các lần restart
 const DB_PATH = path.join(DATA_DIR, "db.json");
 
 // Simple in-process write queue so concurrent requests don't interleave writes
