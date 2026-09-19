@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import { useRouter } from "next/navigation";
+import { apiUrl } from "@/lib/basePath";
 import type { UtilityFeeVersion } from "@/types";
 import { formatVnd } from "@/lib/format";
 
@@ -28,7 +29,7 @@ export default function UtilityFeeEditor({
   const onSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setSaving(true);
-    await fetch(`/api/properties/${propertyId}/utility-fees`, {
+    await fetch(apiUrl(`/api/properties/${propertyId}/utility-fees`), {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({

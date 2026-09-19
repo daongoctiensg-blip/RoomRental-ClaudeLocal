@@ -3,6 +3,7 @@
 import { useEffect, useRef, useState } from "react";
 import type { DocumentType, RoomDocument } from "@/types";
 import { DOCUMENT_TYPES, DOCUMENT_TYPE_LABEL } from "@/types";
+import { apiUrl } from "@/lib/basePath";
 
 /** Upload + list giấy tờ (hợp đồng, giấy xác nhận cọc, ...) cho 1 phòng.
  * Admin-only: file lưu ở kho riêng (/api/documents/*), tách biệt hẳn với
@@ -18,7 +19,7 @@ export default function RoomDocuments({ roomId }: { roomId: string }) {
 
   const load = async () => {
     setLoading(true);
-    const res = await fetch(`/api/rooms/${roomId}/documents`);
+    const res = await fetch(apiUrl(`/api/rooms/${roomId}/documents`));
     const data = await res.json().catch(() => ({}));
     setDocuments(data.documents ?? []);
     setLoading(false);
@@ -27,7 +28,7 @@ export default function RoomDocuments({ roomId }: { roomId: string }) {
   useEffect(() => {
     let cancelled = false;
     (async () => {
-      const res = await fetch(`/api/rooms/${roomId}/documents`);
+      const res = await fetch(apiUrl(`/api/rooms/${roomId}/documents`));
       const data = await res.json().catch(() => ({}));
       if (!cancelled) {
         setDocuments(data.documents ?? []);
@@ -49,7 +50,7 @@ export default function RoomDocuments({ roomId }: { roomId: string }) {
     try {
       const body = new FormData();
       body.append("file", file);
-      const uploadRes = await fetch("/api/documents/upload", {
+      const uploadRes = await fetch(apiUrl("/api/documents/upload"), {
         method: "POST",
         body,
       });
@@ -59,7 +60,7 @@ export default function RoomDocuments({ roomId }: { roomId: string }) {
         return;
       }
 
-      const recordRes = await fetch(`/api/rooms/${roomId}/documents`, {
+      const recordRes = await fetch(apiUrl(`/api/rooms/${roomId}/documents`), {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -83,7 +84,7 @@ export default function RoomDocuments({ roomId }: { roomId: string }) {
 
   const onDelete = async (id: string) => {
     if (!confirm("Xoá giấy tờ này?")) return;
-    await fetch(`/api/rooms/${roomId}/documents/${id}`, { method: "DELETE" });
+    await fetch(apiUrl(`/api/rooms/${roomId}/documents/${id}`), { method: "DELETE" });
     await load();
   };
 

@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import { useRouter } from "next/navigation";
+import { apiUrl } from "@/lib/basePath";
 import Link from "next/link";
 import type { CommissionTier, RoomStatus } from "@/types";
 import { formatVnd } from "@/lib/format";
@@ -49,14 +50,14 @@ export default function RoomActions({
 
   const onStartDeposit = async () => {
     if (!confirm("Xác nhận khách đã đặt cọc giữ phòng?")) return;
-    await call(`/api/rooms/${roomId}/deposit`);
+    await call(apiUrl(`/api/rooms/${roomId}/deposit`));
   };
 
   const onCancelDeposit = async () => {
     if (!confirm("Khách chủ động huỷ cọc trước hạn? (dùng cho trường hợp khách quay lại báo huỷ, KHÔNG dùng cho trường hợp khách im lặng biến mất — case đó hệ thống tự xử lý khi hết hạn)")) {
       return;
     }
-    const data = await call(`/api/rooms/${roomId}/deposit/cancel`);
+    const data = await call(apiUrl(`/api/rooms/${roomId}/deposit/cancel`));
     if (data?.settlement) {
       const s = data.settlement;
       setMessage(
@@ -72,7 +73,7 @@ export default function RoomActions({
   };
 
   const onSignContract = async () => {
-    const data = await call(`/api/rooms/${roomId}/contract`, {
+    const data = await call(apiUrl(`/api/rooms/${roomId}/contract`), {
       contractDurationMonths: Number(months),
     });
     if (data?.settlement) {
@@ -97,7 +98,7 @@ export default function RoomActions({
     setBusy(true);
     setMessage(null);
     try {
-      const res = await fetch(`/api/rooms/${roomId}/status`, {
+      const res = await fetch(apiUrl(`/api/rooms/${roomId}/status`), {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ status }),

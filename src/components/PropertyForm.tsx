@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import { useRouter } from "next/navigation";
+import { apiUrl } from "@/lib/basePath";
 import type { CommissionTier, Property, UtilityFeeVersion } from "@/types";
 
 type FormState = {
@@ -159,7 +160,7 @@ export default function PropertyForm({ property }: { property?: Property }) {
       utilityFeeVersions: property?.utilityFeeVersions ?? [],
     };
 
-    const url = property ? `/api/properties/${property.id}` : "/api/properties";
+    const url = apiUrl(property ? `/api/properties/${property.id}` : "/api/properties");
     const method = property ? "PUT" : "POST";
 
     const res = await fetch(url, {
@@ -182,7 +183,7 @@ export default function PropertyForm({ property }: { property?: Property }) {
     const savedId: string = property?.id ?? data.property.id;
     const newFee = feeChanged(currentFeeVersion(property), form);
     if (newFee) {
-      const feeRes = await fetch(`/api/properties/${savedId}/utility-fees`, {
+      const feeRes = await fetch(apiUrl(`/api/properties/${savedId}/utility-fees`), {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({

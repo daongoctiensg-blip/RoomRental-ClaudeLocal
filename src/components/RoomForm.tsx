@@ -2,6 +2,7 @@
 
 import { useRef, useState } from "react";
 import { useRouter } from "next/navigation";
+import { apiUrl } from "@/lib/basePath";
 import type { Property, Room, SubUnit } from "@/types";
 
 function splitLines(value: string): string[] {
@@ -52,7 +53,7 @@ export default function RoomForm({
     for (const file of files) {
       const body = new FormData();
       body.append("file", file);
-      const res = await fetch("/api/upload", { method: "POST", body });
+      const res = await fetch(apiUrl("/api/upload"), { method: "POST", body });
       const data = await res.json().catch(() => ({}));
       if (!res.ok) {
         setUploadError(data.error ?? `Tải lên "${file.name}" thất bại`);
@@ -91,7 +92,7 @@ export default function RoomForm({
       isActive: room?.isActive ?? true,
     };
 
-    const url = room ? `/api/rooms/${room.id}` : "/api/rooms";
+    const url = apiUrl(room ? `/api/rooms/${room.id}` : "/api/rooms");
     const method = room ? "PUT" : "POST";
 
     const res = await fetch(url, {
