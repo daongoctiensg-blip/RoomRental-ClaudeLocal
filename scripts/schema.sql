@@ -18,6 +18,14 @@ CREATE TABLE IF NOT EXISTS properties (
   name VARCHAR(255) NOT NULL,
   address_new VARCHAR(500) NOT NULL,
   address_old VARCHAR(500) NULL,
+  -- city/ward: structured (not free-text) fields backing the exact-match
+  -- "Thành phố"/"Phường-Xã" dropdown filters, distinct from the fuzzy
+  -- free-text search box (address_new/address_old + geocoding). Declared
+  -- here too (not just in the ALTER TABLE below) so a brand-new database
+  -- created from this file in one pass ends up with the exact same shape,
+  -- without depending on the ALTER statements running at all.
+  city VARCHAR(255) NOT NULL DEFAULT '',
+  ward VARCHAR(255) NOT NULL DEFAULT '',
   lat DOUBLE NULL,
   lng DOUBLE NULL,
   contact_phone VARCHAR(50) NOT NULL,
@@ -36,6 +44,16 @@ CREATE TABLE IF NOT EXISTS properties (
   created_at VARCHAR(30) NOT NULL,
   updated_at VARCHAR(30) NOT NULL
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- Additive migration for a `properties` table that already existed in
+-- production before city/ward were introduced. `CREATE TABLE IF NOT EXISTS`
+-- above does nothing once the table exists — it will NOT add new columns to
+-- it. Real MySQL 8.0 does NOT support `ADD COLUMN IF NOT EXISTS` (that is a
+-- MariaDB-only extension — confirmed by actually running this against real
+-- MySQL 8.0.46, which rejects it with a syntax error), so this step is done
+-- in code instead: see ensureCityWardColumns() in scripts/migrate.ts, which
+-- checks information_schema first and only runs a plain ALTER TABLE when
+-- the column is actually missing.
 
 CREATE TABLE IF NOT EXISTS rooms (
   id VARCHAR(64) PRIMARY KEY,

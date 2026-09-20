@@ -29,6 +29,13 @@ export async function POST(request: NextRequest, { params }: Params) {
   if (!type || !(DOCUMENT_TYPES as string[]).includes(type) || !fileUrl || !fileName) {
     return NextResponse.json({ error: "Thiếu type/fileUrl/fileName hợp lệ" }, { status: 400 });
   }
+  // fileUrl must point at a file this app actually stored via
+  // /api/documents/upload — never an arbitrary URL an admin-panel bug or
+  // compromised admin session could otherwise smuggle into a document
+  // record (e.g. served later to another admin as if it were a real file).
+  if (!/^\/api\/documents\/file\/[a-f0-9-]+\.(jpg|png|webp|pdf)$/.test(fileUrl)) {
+    return NextResponse.json({ error: "fileUrl không hợp lệ" }, { status: 400 });
+  }
 
   const result = await addRoomDocument(id, { type, fileUrl, fileName, note: body?.note });
   if ("error" in result) return NextResponse.json(result, { status: 404 });

@@ -92,6 +92,14 @@ export interface Property {
   name: string;
   addressNew: string;
   addressOld?: string;
+  /** Thành phố/Tỉnh — structured (not free text) so the public "Thành phố"
+   * filter dropdown can do an exact match, distinct from the free-text
+   * search box (which does fuzzy keyword + nearby-radius matching instead —
+   * see src/lib/search.ts / src/lib/geocode.ts). Should read as a component
+   * of addressNew, e.g. "Thành phố Hồ Chí Minh". */
+  city: string;
+  /** Phường/Xã — same idea as `city`, for the "Phường/Xã" filter dropdown. */
+  ward: string;
   lat?: number;
   lng?: number;
   /** Public number customers call/Zalo to arrange a viewing. */
@@ -179,7 +187,16 @@ export interface Database {
 /** Query params accepted by GET /api/rooms and the public listing page. */
 export interface RoomFilter {
   propertyId?: string;
-  /** free text matched against property addressNew / addressOld */
+  /** Exact-match dropdown filters (Property.city / Property.ward). When
+   * either is set, rooms are simply listed for that city/ward — no
+   * geocoding, no fuzzy matching. Independent from `address` below and can
+   * be combined with it, but only `address` ever triggers the fuzzy
+   * keyword/nearby-radius search. */
+  city?: string;
+  ward?: string;
+  /** Free-text search box query — fuzzy keyword matching (src/lib/search.ts)
+   * plus nearby-radius geocoding (src/lib/geocode.ts). This is the ONLY
+   * filter that triggers geocoding; city/ward above never do. */
   address?: string;
   status?: RoomStatus[];
   priceMin?: number;
@@ -237,6 +254,12 @@ export interface ContractSettlement {
   commissionAmount: number;
   bonusApplicable: boolean;
   bonusAmount: number;
+  /** Set only when the contract was signed straight from "deposited" status
+   * (rather than "available") — the hold-fee snapshot that was in effect at
+   * that moment, kept here purely for the audit trail so it's on record
+   * what happened to that money (folded into the deal) rather than it
+   * silently disappearing when currentDeposit gets cleared. */
+  previousDeposit?: { holdAmount: number; holdDays: number; depositedAt: string };
 }
 
 export interface RoomStatusEvent {

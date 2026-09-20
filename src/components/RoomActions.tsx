@@ -131,8 +131,9 @@ export default function RoomActions({
             </button>
             <button
               type="button"
-              disabled={busy}
+              disabled={busy || commissionPolicy.length === 0}
               onClick={() => setShowContractForm((v) => !v)}
+              title={commissionPolicy.length === 0 ? "Chưa có mốc hoa hồng — thêm ở trang Sửa thông tin nhà trước" : undefined}
               className="rounded-lg bg-emerald-600 px-2.5 py-1 text-xs font-medium text-white hover:bg-emerald-700 disabled:opacity-60"
             >
               Chốt hợp đồng
@@ -166,8 +167,9 @@ export default function RoomActions({
             </button>
             <button
               type="button"
-              disabled={busy}
+              disabled={busy || commissionPolicy.length === 0}
               onClick={() => setShowContractForm((v) => !v)}
+              title={commissionPolicy.length === 0 ? "Chưa có mốc hoa hồng — thêm ở trang Sửa thông tin nhà trước" : undefined}
               className="rounded-lg bg-emerald-600 px-2.5 py-1 text-xs font-medium text-white hover:bg-emerald-700 disabled:opacity-60"
             >
               Chốt hợp đồng

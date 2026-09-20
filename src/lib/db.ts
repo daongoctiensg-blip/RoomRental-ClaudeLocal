@@ -4,7 +4,10 @@ import { randomUUID } from "crypto";
 import type { PoolConnection } from "mysql2/promise";
 import type {
   CancellationSettlement,
+  CommissionTier,
   ContractSettlement,
+  DepositCancellationPolicy,
+  DepositPolicy,
   DocumentType,
   Property,
   PublicProperty,
@@ -18,6 +21,8 @@ import type {
   UtilityFeeVersion,
 } from "@/types";
 import { getPool } from "@/lib/mysqlPool";
+import { extractSearchKeywords, matchesKeywords } from "@/lib/search";
+import { NEARBY_RADIUS_KM, geocodeAddress, haversineDistanceKm } from "@/lib/geocode";
 
 // ---------------------------------------------------------------------------
 // MySQL-backed data layer. Every function here returns/accepts the exact
@@ -81,6 +86,8 @@ function rowToProperty(row: any): Property {
     name: row.name,
     addressNew: row.address_new,
     addressOld: row.address_old ?? undefined,
+    city: row.city,
+    ward: row.ward,
     lat: row.lat ?? undefined,
     lng: row.lng ?? undefined,
     contactPhone: row.contact_phone,
@@ -212,7 +219,70 @@ export async function getProperty(id: string): Promise<Property | undefined> {
 
 export type PropertyInput = Omit<Property, "id" | "createdAt" | "updatedAt">;
 
-export async function createProperty(input: PropertyInput): Promise<Property> {
+// Server-side range validation for every money/percentage field on a
+// Property. HTML min/max attributes on PropertyForm.tsx are a UX hint only —
+// they are NOT a security boundary, since any direct API call bypasses them.
+// Found in QA: without this, a direct call to POST/PUT /api/properties could
+// set a negative holdAmount, a >100% landlord/sale split, or a commission
+// tier with an out-of-range percent, all of which feed real money
+// calculations (cancellation settlement, commission payout).
+function validatePropertyMoneyFields(input: {
+  depositPolicy?: Partial<DepositPolicy>;
+  depositCancellationPolicy?: Partial<DepositCancellationPolicy>;
+  commissionPolicy?: CommissionTier[];
+}): string | null {
+  const dp = input.depositPolicy;
+  if (dp) {
+    if (typeof dp.holdAmount === "number" && dp.holdAmount < 0) {
+      return "Cọc giữ phòng không được âm.";
+    }
+    if (typeof dp.holdDays === "number" && dp.holdDays < 1) {
+      return "Thời hạn giữ cọc phải ít nhất 1 ngày.";
+    }
+    if (typeof dp.securityDepositMonths === "number" && dp.securityDepositMonths < 0) {
+      return "Giá trị cọc khi ký hợp đồng không được âm.";
+    }
+    if (typeof dp.prepaidRentMonths === "number" && dp.prepaidRentMonths < 0) {
+      return "Số tháng thanh toán trước không được âm.";
+    }
+  }
+
+  const cp = input.depositCancellationPolicy;
+  if (cp) {
+    const { landlordSharePercent, saleSharePercent } = cp;
+    for (const [label, value] of [
+      ["Tỉ lệ chủ nhà", landlordSharePercent],
+      ["Tỉ lệ sale", saleSharePercent],
+    ] as const) {
+      if (typeof value === "number" && (value < 0 || value > 100)) {
+        return `${label} trong chính sách huỷ cọc phải trong khoảng 0-100%.`;
+      }
+    }
+  }
+
+  if (input.commissionPolicy) {
+    if (input.commissionPolicy.length === 0) {
+      return "Cần ít nhất 1 mốc hoa hồng — không thể lưu chính sách hoa hồng trống.";
+    }
+    for (const tier of input.commissionPolicy) {
+      if (tier.commissionPercent < 0 || tier.commissionPercent > 100) {
+        return `Mốc hoa hồng ${tier.contractDurationMonths} tháng có % ngoài khoảng 0-100.`;
+      }
+      if (tier.contractDurationMonths <= 0) {
+        return `Mốc hoa hồng phải có thời hạn hợp đồng lớn hơn 0 tháng.`;
+      }
+    }
+  }
+
+  return null;
+}
+
+export async function createProperty(
+  input: PropertyInput
+): Promise<Property | { error: string }> {
+  const validationError = validatePropertyMoneyFields(input);
+  if (validationError) return { error: validationError };
+
   const pool = getPool();
   const property: Property = {
     ...input,
@@ -222,17 +292,19 @@ export async function createProperty(input: PropertyInput): Promise<Property> {
   };
   await pool.query(
     `INSERT INTO properties
-      (id, name, address_new, address_old, lat, lng, contact_phone,
+      (id, name, address_new, address_old, city, ward, lat, lng, contact_phone,
        landlord_name, landlord_contact_phone, landlord_zalo,
        amenities_shared, transport_notes, utility_fee_versions,
        deposit_policy, deposit_cancellation_policy, commission_policy,
        sale_bonus_policy, images, is_active, created_at, updated_at)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
     [
       property.id,
       property.name,
       property.addressNew,
       property.addressOld ?? null,
+      property.city,
+      property.ward,
       property.lat ?? null,
       property.lng ?? null,
       property.contactPhone,
@@ -259,6 +331,8 @@ const PROPERTY_COLUMN_MAP: Record<string, string> = {
   name: "name",
   addressNew: "address_new",
   addressOld: "address_old",
+  city: "city",
+  ward: "ward",
   lat: "lat",
   lng: "lng",
   contactPhone: "contact_phone",
@@ -281,7 +355,10 @@ const PROPERTY_JSON_COLUMN_MAP: Record<string, string> = {
 export async function updateProperty(
   id: string,
   input: Partial<PropertyInput>
-): Promise<Property | undefined> {
+): Promise<Property | { error: string } | undefined> {
+  const validationError = validatePropertyMoneyFields(input);
+  if (validationError) return { error: validationError };
+
   const pool = getPool();
   const sets: string[] = [];
   const values: unknown[] = [];
@@ -432,7 +509,19 @@ async function sweepExpiredDeposits(conn: PoolConnection, now: Date): Promise<vo
   }
 }
 
-export async function listRooms(filter?: RoomFilter): Promise<RoomWithProperty[]> {
+export async function listRooms(
+  filter?: RoomFilter,
+  opts?: {
+    /** Admin views (dashboard, commission report) need rooms that belong to
+     * a deactivated ("unlisted") property to still show up — deactivating a
+     * property hides it from the public site, it's not a delete. Found in
+     * QA: without this, an unlisted property's rooms silently vanished from
+     * every admin list and its past transactions in the commission report
+     * got mislabeled "(phòng đã xoá)" even though nothing was deleted. The
+     * public site must never pass this — default (false) is correct there. */
+    includeInactiveProperties?: boolean;
+  }
+): Promise<RoomWithProperty[]> {
   const pool = getPool();
   const conn = await pool.getConnection();
   let rows;
@@ -441,7 +530,10 @@ export async function listRooms(filter?: RoomFilter): Promise<RoomWithProperty[]
     await sweepExpiredDeposits(conn, new Date());
     await conn.commit();
 
-    const clauses: string[] = ["r.is_active = 1", "p.is_active = 1"];
+    const clauses: string[] = ["r.is_active = 1"];
+    if (!opts?.includeInactiveProperties) {
+      clauses.push("p.is_active = 1");
+    }
     const values: unknown[] = [];
 
     if (filter?.propertyId) {
@@ -460,17 +552,37 @@ export async function listRooms(filter?: RoomFilter): Promise<RoomWithProperty[]
       clauses.push("r.price_monthly < ?");
       values.push(filter.priceMax);
     }
-    if (filter?.address) {
-      const q = `%${filter.address.trim().toLowerCase()}%`;
-      clauses.push("(LOWER(p.address_new) LIKE ? OR LOWER(p.address_old) LIKE ? OR LOWER(p.name) LIKE ?)");
-      values.push(q, q, q);
+    // Dropdown filters (exact match, no geocoding — the customer explicitly
+    // picked a city/ward, so just list everything in it). Independent from
+    // the free-text `address` search box below, which is the only thing
+    // that triggers fuzzy keyword/nearby-radius matching.
+    if (filter?.city) {
+      clauses.push("LOWER(TRIM(p.city)) = ?");
+      values.push(filter.city.trim().toLowerCase());
+    }
+    if (filter?.ward) {
+      clauses.push("LOWER(TRIM(p.ward)) = ?");
+      values.push(filter.ward.trim().toLowerCase());
     }
 
+    // nestTables: true — rooms and properties share several column names
+    // (id, images, is_active, created_at, updated_at). A flat `SELECT r.*,
+    // p.*` collides those into one object and mysql2 silently keeps only the
+    // LAST one of each duplicate key — found in QA: every room ended up with
+    // the PROPERTY's images/is_active/created_at/updated_at instead of its
+    // own, so every room card on the public site silently showed the
+    // property's photo instead of that specific room's photo. nestTables
+    // keeps each table's columns in its own `{r: {...}, p: {...}}` bucket,
+    // so there's no collision regardless of how many columns happen to
+    // share a name between the two tables.
     [rows] = await conn.query(
-      `SELECT r.*, p.*, r.id AS room_id_, p.id AS property_id_
+      {
+        sql: `SELECT r.*, p.*
        FROM rooms r JOIN properties p ON p.id = r.property_id
        WHERE ${clauses.join(" AND ")}
        ORDER BY r.created_at DESC`,
+        nestTables: true,
+      },
       values
     );
   } catch (err) {
@@ -480,11 +592,63 @@ export async function listRooms(filter?: RoomFilter): Promise<RoomWithProperty[]
     conn.release();
   }
 
-  return (rows as Record<string, unknown>[]).map((row) => {
-    const room = rowToRoom({ ...row, id: row.room_id_ });
-    const property = rowToProperty({ ...row, id: row.property_id_ });
+  let withProperty: RoomWithProperty[] = (
+    rows as { r: Record<string, unknown>; p: Record<string, unknown> }[]
+  ).map((row) => {
+    const room = rowToRoom(row.r);
+    const property = rowToProperty(row.p);
     return { ...room, property };
   });
+
+  if (filter?.address) {
+    // Free-text location search combines two independent signals, either of
+    // which is enough to include a room:
+    //  1. Keyword match (src/lib/search.ts) — catches "quận 7", "Phú
+    //     Thuận", etc. against our own address/transport-notes text.
+    //  2. Radius match (src/lib/geocode.ts) — catches a street or landmark
+    //     that isn't in our address text at all, by geocoding the query and
+    //     the property and checking the straight-line distance.
+    // This is done in JS (not SQL) because it needs Vietnamese-aware
+    // keyword extraction and an outbound geocoding call — matches the exact
+    // logic that ran against the JSON-file store, just against a SQL-fetched
+    // dataset instead. Results are then sorted nearest-first when we have a
+    // distance, keyword-only matches trailing after (still relevant, just
+    // unranked).
+    const keywords = extractSearchKeywords(filter.address);
+    const queryPoint = await geocodeAddress(filter.address);
+
+    const scored = withProperty.map((r) => {
+      const matchesKeyword = matchesKeywords(
+        [
+          r.property.addressNew,
+          r.property.addressOld ?? "",
+          r.property.name,
+          ...r.property.transportNotes,
+        ].join(" | "),
+        keywords
+      );
+      const distanceKm =
+        queryPoint && typeof r.property.lat === "number" && typeof r.property.lng === "number"
+          ? haversineDistanceKm(queryPoint, { lat: r.property.lat, lng: r.property.lng })
+          : null;
+      return { room: r, matchesKeyword, distanceKm };
+    });
+
+    const filtered = scored.filter(
+      (s) => s.matchesKeyword || (s.distanceKm !== null && s.distanceKm <= NEARBY_RADIUS_KM)
+    );
+
+    filtered.sort((a, b) => {
+      if (a.distanceKm !== null && b.distanceKm !== null) return a.distanceKm - b.distanceKm;
+      if (a.distanceKm !== null) return -1;
+      if (b.distanceKm !== null) return 1;
+      return 0;
+    });
+
+    withProperty = filtered.map((s) => s.room);
+  }
+
+  return withProperty;
 }
 
 export async function getRoom(id: string): Promise<RoomWithProperty | undefined> {
@@ -819,11 +983,19 @@ export async function cancelDeposit(
 // --------------------------- Contract / commission ---------------------------
 
 /** Pure function, unchanged from the JSON-file version — no DB involved. */
+// Found in QA: this used to silently return { commissionPercent: 0,
+// commissionAmount: 0 } when the policy was empty or no tier matched the
+// contract duration — a contract could be signed and recorded with zero
+// commission with no indication anything was wrong. Now returns an explicit
+// error instead, which signContract propagates.
 export function calculateCommission(
   priceMonthly: number,
   contractDurationMonths: number,
   commissionPolicy: { contractDurationMonths: number; commissionPercent: number }[]
-): { commissionPercent: number; commissionAmount: number } {
+): { commissionPercent: number; commissionAmount: number } | { error: string } {
+  if (commissionPolicy.length === 0) {
+    return { error: "Nhà này chưa có chính sách hoa hồng — không thể chốt hợp đồng." };
+  }
   const exact = commissionPolicy.find(
     (t) => t.contractDurationMonths === contractDurationMonths
   );
@@ -833,9 +1005,14 @@ export function calculateCommission(
       .filter((t) => t.contractDurationMonths <= contractDurationMonths)
       .sort((a, b) => b.contractDurationMonths - a.contractDurationMonths)[0];
 
-  const commissionPercent = tier?.commissionPercent ?? 0;
-  const commissionAmount = Math.round((priceMonthly * commissionPercent) / 100);
-  return { commissionPercent, commissionAmount };
+  if (!tier) {
+    return {
+      error: `Không có mốc hoa hồng nào áp dụng cho hợp đồng ${contractDurationMonths} tháng.`,
+    };
+  }
+
+  const commissionAmount = Math.round((priceMonthly * tier.commissionPercent) / 100);
+  return { commissionPercent: tier.commissionPercent, commissionAmount };
 }
 
 function isWithin(date: Date, fromIso: string, toIso: string): boolean {
@@ -869,14 +1046,32 @@ export async function signContract(
     }
 
     const now = new Date();
-    const { commissionPercent, commissionAmount } = calculateCommission(
+    const commission = calculateCommission(
       room.priceMonthly,
       contractDurationMonths,
       property.commissionPolicy
     );
+    if ("error" in commission) {
+      await conn.rollback();
+      return commission;
+    }
+    const { commissionPercent, commissionAmount } = commission;
     const bonus = property.saleBonusPolicy;
     const bonusApplicable = !!bonus && isWithin(now, bonus.validFrom, bonus.validTo);
     const bonusAmount = bonusApplicable ? bonus!.amount : 0;
+
+    // Audit-trail snapshot: capture the deposit terms in effect right before
+    // they're cleared below, so there's a record of what was agreed even
+    // after currentDeposit is wiped by this same transaction (finding #5 —
+    // previously this info silently disappeared once a contract was signed
+    // straight from "deposited" status).
+    const previousDeposit = room.currentDeposit
+      ? {
+          holdAmount: room.currentDeposit.holdAmount,
+          holdDays: room.currentDeposit.holdDays,
+          depositedAt: room.currentDeposit.depositedAt,
+        }
+      : undefined;
 
     const settlement: ContractSettlement = {
       contractDurationMonths,
@@ -884,6 +1079,7 @@ export async function signContract(
       commissionAmount,
       bonusApplicable,
       bonusAmount,
+      previousDeposit,
     };
 
     const nowStr = now.toISOString();

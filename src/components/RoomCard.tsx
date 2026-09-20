@@ -4,7 +4,23 @@ import StatusBadge from "@/components/StatusBadge";
 import RoomPhoto from "@/components/RoomPhoto";
 import { formatVnd, telHref, zaloHref } from "@/lib/format";
 
-export default function RoomCard({ room }: { room: RoomWithProperty }) {
+function isBonusActiveToday(validFrom: string, validTo: string): boolean {
+  const today = new Date().toISOString().slice(0, 10);
+  return today >= validFrom && today <= validTo;
+}
+
+/** admin=true reveals a compact "nội bộ" (Sale-only) strip — commission per
+ * contract-duration tier and the "lì xì" bonus if currently valid. Nothing
+ * here is rendered at all when admin is false, so a customer's page never
+ * receives this in the HTML — see isAdminSession() in src/lib/apiAuth.ts for
+ * how the caller decides admin vs customer. */
+export default function RoomCard({
+  room,
+  admin = false,
+}: {
+  room: RoomWithProperty;
+  admin?: boolean;
+}) {
   const address = room.property.addressNew;
 
   return (
@@ -79,6 +95,36 @@ export default function RoomCard({ room }: { room: RoomWithProperty }) {
             </a>
           </div>
         </div>
+
+        {admin ? (
+          <div className="flex flex-wrap items-center gap-2 rounded-lg border border-amber-200 bg-amber-50 px-2.5 py-1.5 text-xs text-amber-900">
+            <span className="font-semibold uppercase tracking-wide text-amber-600">
+              Nội bộ:
+            </span>
+            {room.property.commissionPolicy.map((tier) => (
+              <span key={tier.contractDurationMonths}>
+                {tier.contractDurationMonths}th {tier.commissionPercent}% (
+                {formatVnd(Math.round((room.priceMonthly * tier.commissionPercent) / 100))}
+                )
+              </span>
+            ))}
+            {room.property.saleBonusPolicy &&
+            isBonusActiveToday(
+              room.property.saleBonusPolicy.validFrom,
+              room.property.saleBonusPolicy.validTo
+            ) ? (
+              <span className="font-medium">
+                🧧 Lì xì {formatVnd(room.property.saleBonusPolicy.amount)}
+              </span>
+            ) : null}
+            <Link
+              href={`/admin/rooms/${room.id}`}
+              className="ml-auto font-medium text-amber-700 hover:underline"
+            >
+              Quản lý →
+            </Link>
+          </div>
+        ) : null}
       </div>
     </article>
   );

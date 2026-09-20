@@ -11,7 +11,10 @@ export async function GET(request: NextRequest) {
 
   const [events, rooms, properties] = await Promise.all([
     listAllEvents(),
-    listRooms(),
+    // includeInactiveProperties: a room on a now-unlisted property still had
+    // real transactions — they must not disappear from this report just
+    // because the property was later unlisted (not deleted) from the site.
+    listRooms(undefined, { includeInactiveProperties: true }),
     listProperties({ includeInactive: true }),
   ]);
 

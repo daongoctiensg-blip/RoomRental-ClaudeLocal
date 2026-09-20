@@ -20,6 +20,12 @@ export async function GET(request: NextRequest) {
   const address = searchParams.get("address");
   if (address) filter.address = address;
 
+  const city = searchParams.get("city");
+  if (city) filter.city = city;
+
+  const ward = searchParams.get("ward");
+  if (ward) filter.ward = ward;
+
   const statusParam = searchParams.get("status");
   if (statusParam) {
     const statuses = statusParam

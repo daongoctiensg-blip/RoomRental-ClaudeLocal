@@ -15,6 +15,16 @@ export async function GET(request: NextRequest, { params }: Params) {
   const property = await getProperty(id);
   if (!property) return NextResponse.json({ error: "Not found" }, { status: 404 });
   const admin = isAdminRequest(request);
+  // A deactivated property is unlisted from the public site, not deleted —
+  // an admin (who needs it to re-activate/edit it) can still fetch it by
+  // id, but a non-admin caller must get the same "Not found" as a truly
+  // missing id, not the property's public details. Found in QA: this had
+  // no active-status check at all, so a deactivated property's name,
+  // address, images, and contact phone stayed fully retrievable by anyone
+  // who had (or guessed) its id.
+  if (!admin && !property.isActive) {
+    return NextResponse.json({ error: "Not found" }, { status: 404 });
+  }
   return NextResponse.json({ property: admin ? property : toPublicProperty(property) });
 }
 
@@ -26,9 +36,10 @@ export async function PUT(request: NextRequest, { params }: Params) {
   const body = (await request.json().catch(() => null)) as Partial<PropertyInput> | null;
   if (!body) return NextResponse.json({ error: "Invalid payload" }, { status: 400 });
 
-  const property = await updateProperty(id, body);
-  if (!property) return NextResponse.json({ error: "Not found" }, { status: 404 });
-  return NextResponse.json({ property });
+  const result = await updateProperty(id, body);
+  if (!result) return NextResponse.json({ error: "Not found" }, { status: 404 });
+  if ("error" in result) return NextResponse.json(result, { status: 400 });
+  return NextResponse.json({ property: result });
 }
 
 export async function DELETE(request: NextRequest, { params }: Params) {

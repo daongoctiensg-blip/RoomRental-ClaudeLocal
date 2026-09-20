@@ -23,6 +23,45 @@ function loadEnvFile(): void {
 }
 loadEnvFile();
 
+// Real MySQL 8.0 rejects `ADD COLUMN IF NOT EXISTS` / `ADD INDEX IF NOT
+// EXISTS` as a syntax error (verified against a real MySQL 8.0.46 instance —
+// that syntax is a MariaDB-only extension, not standard MySQL, despite an
+// earlier version of this script's comment incorrectly claiming both
+// support it). Do the "if not exists" check in code instead: read
+// information_schema first, only ALTER when the column/index is actually
+// missing. Safe to run on every migrate — a no-op once already applied.
+async function ensureCityWardColumns(pool: import("mysql2/promise").Pool): Promise<void> {
+  const [cols] = await pool.query(
+    `SELECT COLUMN_NAME FROM information_schema.COLUMNS
+     WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'properties'
+       AND COLUMN_NAME IN ('city', 'ward')`
+  );
+  const existing = new Set((cols as { COLUMN_NAME: string }[]).map((c) => c.COLUMN_NAME));
+
+  if (!existing.has("city")) {
+    console.log("Adding properties.city column...");
+    await pool.query(
+      "ALTER TABLE properties ADD COLUMN city VARCHAR(255) NOT NULL DEFAULT '' AFTER address_old"
+    );
+  }
+  if (!existing.has("ward")) {
+    console.log("Adding properties.ward column...");
+    await pool.query(
+      "ALTER TABLE properties ADD COLUMN ward VARCHAR(255) NOT NULL DEFAULT '' AFTER city"
+    );
+  }
+
+  const [idx] = await pool.query(
+    `SELECT INDEX_NAME FROM information_schema.STATISTICS
+     WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'properties'
+       AND INDEX_NAME = 'idx_properties_city_ward'`
+  );
+  if ((idx as unknown[]).length === 0) {
+    console.log("Adding idx_properties_city_ward index...");
+    await pool.query("ALTER TABLE properties ADD INDEX idx_properties_city_ward (city, ward)");
+  }
+}
+
 async function main() {
   const pool = getPool();
 
@@ -47,6 +86,8 @@ async function main() {
   }
   console.log("Schema OK.");
 
+  await ensureCityWardColumns(pool);
+
   const [rows] = await pool.query("SELECT COUNT(*) AS n FROM properties");
   const count = (rows as { n: number }[])[0].n;
   if (count > 0) {
@@ -61,17 +102,19 @@ async function main() {
   for (const p of seed.properties) {
     await pool.query(
       `INSERT INTO properties
-        (id, name, address_new, address_old, lat, lng, contact_phone,
+        (id, name, address_new, address_old, city, ward, lat, lng, contact_phone,
          landlord_name, landlord_contact_phone, landlord_zalo,
          amenities_shared, transport_notes, utility_fee_versions,
          deposit_policy, deposit_cancellation_policy, commission_policy,
          sale_bonus_policy, images, is_active, created_at, updated_at)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       [
         p.id,
         p.name,
         p.addressNew,
         p.addressOld ?? null,
+        p.city,
+        p.ward,
         p.lat ?? null,
         p.lng ?? null,
         p.contactPhone,

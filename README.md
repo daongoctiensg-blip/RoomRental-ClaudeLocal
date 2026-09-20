@@ -51,6 +51,31 @@ Everything that matters is in MySQL now — back up with `mysqldump` (plus the
 `data/uploads` and `data/documents` folders for the actual files) instead of
 copying `data/db.json`, which no longer exists once you've migrated.
 
+### Two things MySQL does NOT fix: single-process in-memory rate limiters
+
+Moving to MySQL solved the JSON-file store's biggest limitation (the
+in-process write queue that couldn't be shared across multiple app
+instances). But two separate safety mechanisms elsewhere in the codebase
+have the exact same "single process only" constraint, and MySQL has nothing
+to do with either of them — they hold their state in a plain in-memory `Map`
+inside the Node process, not in the database:
+
+- `src/lib/geocode.ts` — the outbound-request rate limiter that throttles
+  calls to the free Nominatim geocoding API used by the search box's
+  nearby-radius matching (`MIN_REQUEST_INTERVAL_MS`). With N app processes
+  each running their own limiter, the real outbound rate to Nominatim
+  becomes N× what any single process intends, risking an IP ban.
+- `src/lib/auth.ts` — the login rate limiter/lockout guarding the shared
+  `ADMIN_PASSWORD` (`loginAttempts` map, 5 failed attempts / 15 minutes).
+  With N processes behind a load balancer, an attacker's requests get spread
+  across processes and each one only sees a fraction of the failed
+  attempts — the allowed guess rate effectively multiplies by N.
+
+**Do not run this app as multiple instances/replicas/pm2-cluster workers
+without replacing both of these with a shared store (e.g. Redis) first.**
+Single-instance deployment (the current plan) is unaffected by either
+caveat.
+
 ## Environment variables
 
 Copy `.env.example` to `.env.local` for local development (or `.env` on the

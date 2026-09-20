@@ -9,6 +9,8 @@ type FormState = {
   name: string;
   addressNew: string;
   addressOld: string;
+  city: string;
+  ward: string;
   contactPhone: string;
   landlordName: string;
   landlordContactPhone: string;
@@ -48,6 +50,8 @@ function toFormState(property?: Property): FormState {
     name: property?.name ?? "",
     addressNew: property?.addressNew ?? "",
     addressOld: property?.addressOld ?? "",
+    city: property?.city ?? "",
+    ward: property?.ward ?? "",
     contactPhone: property?.contactPhone ?? "",
     landlordName: property?.landlordName ?? "",
     landlordContactPhone: property?.landlordContactPhone ?? "",
@@ -128,6 +132,8 @@ export default function PropertyForm({ property }: { property?: Property }) {
       name: form.name,
       addressNew: form.addressNew,
       addressOld: form.addressOld || undefined,
+      city: form.city,
+      ward: form.ward,
       contactPhone: form.contactPhone,
       landlordName: form.landlordName || undefined,
       landlordContactPhone: form.landlordContactPhone || undefined,
@@ -227,6 +233,24 @@ export default function PropertyForm({ property }: { property?: Property }) {
           <input
             value={form.addressOld}
             onChange={(e) => update("addressOld", e.target.value)}
+            className={inputClass}
+          />
+        </Field>
+        <Field label="Thành phố / Tỉnh (dùng cho bộ lọc dropdown trên trang khách)">
+          <input
+            required
+            placeholder="VD: Thành phố Hồ Chí Minh"
+            value={form.city}
+            onChange={(e) => update("city", e.target.value)}
+            className={inputClass}
+          />
+        </Field>
+        <Field label="Phường / Xã (dùng cho bộ lọc dropdown trên trang khách)">
+          <input
+            required
+            placeholder="VD: Phường Phú Thuận"
+            value={form.ward}
+            onChange={(e) => update("ward", e.target.value)}
             className={inputClass}
           />
         </Field>
@@ -335,6 +359,7 @@ export default function PropertyForm({ property }: { property?: Property }) {
           <Field label="Cọc giữ phòng (VND) — đóng trước khi quyết định">
             <input
               type="number"
+              min={0}
               value={form.holdAmount}
               onChange={(e) => update("holdAmount", Number(e.target.value))}
               className={inputClass}
@@ -343,6 +368,7 @@ export default function PropertyForm({ property }: { property?: Property }) {
           <Field label="Thời hạn giữ cọc (số ngày)">
             <input
               type="number"
+              min={1}
               value={form.holdDays}
               onChange={(e) => update("holdDays", Number(e.target.value))}
               className={inputClass}
@@ -351,6 +377,7 @@ export default function PropertyForm({ property }: { property?: Property }) {
           <Field label="Giá trị cọc khi ký hợp đồng (tháng tiền thuê)">
             <input
               type="number"
+              min={0}
               value={form.securityDepositMonths}
               onChange={(e) => update("securityDepositMonths", Number(e.target.value))}
               className={inputClass}
@@ -359,6 +386,7 @@ export default function PropertyForm({ property }: { property?: Property }) {
           <Field label="Thanh toán trước khi ký (tháng tiền thuê)">
             <input
               type="number"
+              min={0}
               value={form.prepaidRentMonths}
               onChange={(e) => update("prepaidRentMonths", Number(e.target.value))}
               className={inputClass}
@@ -387,6 +415,8 @@ export default function PropertyForm({ property }: { property?: Property }) {
           <Field label="Phần còn lại — chủ nhà (%)">
             <input
               type="number"
+              min={0}
+              max={100}
               value={form.cancellationLandlordPercent}
               onChange={(e) =>
                 update("cancellationLandlordPercent", Number(e.target.value))
@@ -397,6 +427,8 @@ export default function PropertyForm({ property }: { property?: Property }) {
           <Field label="Phần còn lại — sale (%)">
             <input
               type="number"
+              min={0}
+              max={100}
               value={form.cancellationSalePercent}
               onChange={(e) =>
                 update("cancellationSalePercent", Number(e.target.value))
@@ -405,6 +437,12 @@ export default function PropertyForm({ property }: { property?: Property }) {
             />
           </Field>
         </div>
+        {Number(form.cancellationLandlordPercent) + Number(form.cancellationSalePercent) !== 100 ? (
+          <p className="text-xs text-amber-600">
+            Lưu ý: 2 tỉ lệ trên cộng lại nên bằng 100% (hiện đang là{" "}
+            {Number(form.cancellationLandlordPercent) + Number(form.cancellationSalePercent)}%).
+          </p>
+        ) : null}
         <Field label="Ghi chú thêm (nội bộ)">
           <textarea
             value={form.cancellationNote}
@@ -425,6 +463,7 @@ export default function PropertyForm({ property }: { property?: Property }) {
             <div key={i} className="flex items-center gap-2">
               <input
                 type="number"
+                min={1}
                 value={tier.contractDurationMonths}
                 onChange={(e) =>
                   setCommission((list) =>
@@ -440,6 +479,8 @@ export default function PropertyForm({ property }: { property?: Property }) {
               <span className="text-sm text-slate-500">tháng →</span>
               <input
                 type="number"
+                min={0}
+                max={100}
                 value={tier.commissionPercent}
                 onChange={(e) =>
                   setCommission((list) =>
@@ -458,7 +499,13 @@ export default function PropertyForm({ property }: { property?: Property }) {
                 onClick={() =>
                   setCommission((list) => list.filter((_, idx) => idx !== i))
                 }
-                className="text-xs text-red-500 hover:underline"
+                disabled={commission.length <= 1}
+                title={
+                  commission.length <= 1
+                    ? "Cần giữ lại ít nhất 1 mốc hoa hồng"
+                    : undefined
+                }
+                className="text-xs text-red-500 hover:underline disabled:cursor-not-allowed disabled:text-slate-300 disabled:no-underline"
               >
                 Xoá
               </button>

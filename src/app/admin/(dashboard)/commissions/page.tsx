@@ -14,7 +14,10 @@ function formatDateTime(iso: string): string {
 export default async function CommissionsPage() {
   const [events, rooms, properties] = await Promise.all([
     listAllEvents(),
-    listRooms(),
+    // includeInactiveProperties: past transactions on a now-unlisted
+    // property must still resolve to a real room code here, not
+    // "(phòng đã xoá)" — nothing was deleted, it was just unlisted.
+    listRooms(undefined, { includeInactiveProperties: true }),
     listProperties({ includeInactive: true }),
   ]);
 

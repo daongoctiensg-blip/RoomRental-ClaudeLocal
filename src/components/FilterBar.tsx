@@ -5,7 +5,15 @@ import { useCallback, useState, useTransition } from "react";
 import { ROOM_STATUSES, ROOM_STATUS_LABEL, type RoomStatus } from "@/types";
 import { PRICE_BUCKETS } from "@/lib/priceBuckets";
 
-export default function FilterBar() {
+type LocationOption = { city: string; ward: string };
+
+export default function FilterBar({
+  locationOptions = [],
+}: {
+  /** Every distinct {city, ward} pair that actually has an active property
+   * — the dropdowns only ever offer choices that can return results. */
+  locationOptions?: LocationOption[];
+}) {
   const router = useRouter();
   const pathname = usePathname();
   const searchParams = useSearchParams();
@@ -19,6 +27,18 @@ export default function FilterBar() {
     (searchParams.get("status") ?? "available").split(",").filter(Boolean)
   );
   const selectedBucket = searchParams.get("priceBucket");
+
+  const selectedCity = searchParams.get("city") ?? "";
+  const selectedWard = searchParams.get("ward") ?? "";
+
+  const cities = Array.from(new Set(locationOptions.map((o) => o.city))).sort();
+  const wardsForSelectedCity = Array.from(
+    new Set(
+      locationOptions
+        .filter((o) => !selectedCity || o.city === selectedCity)
+        .map((o) => o.ward)
+    )
+  ).sort();
 
   const pushParams = useCallback(
     (mutate: (params: URLSearchParams) => void) => {
@@ -66,6 +86,29 @@ export default function FilterBar() {
         params.set("address", addressInput.trim());
       } else {
         params.delete("address");
+      }
+    });
+  };
+
+  const setCity = (value: string) => {
+    pushParams((params) => {
+      if (value) {
+        params.set("city", value);
+      } else {
+        params.delete("city");
+      }
+      // Ward list depends on the selected city — an old ward selection from
+      // a different city would silently filter out everything, so clear it.
+      params.delete("ward");
+    });
+  };
+
+  const setWard = (value: string) => {
+    pushParams((params) => {
+      if (value) {
+        params.set("ward", value);
+      } else {
+        params.delete("ward");
       }
     });
   };
@@ -147,6 +190,39 @@ export default function FilterBar() {
           })}
         </div>
       </div>
+
+      {cities.length > 0 ? (
+        <div className="flex flex-col gap-2">
+          <h3 className="text-xs font-semibold uppercase tracking-wide text-slate-500">
+            Hoặc chọn khu vực
+          </h3>
+          <select
+            value={selectedCity}
+            onChange={(e) => setCity(e.target.value)}
+            className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm focus:border-[color:var(--color-accent)] focus:outline-none"
+          >
+            <option value="">Tất cả thành phố / tỉnh</option>
+            {cities.map((city) => (
+              <option key={city} value={city}>
+                {city}
+              </option>
+            ))}
+          </select>
+          <select
+            value={selectedWard}
+            onChange={(e) => setWard(e.target.value)}
+            disabled={wardsForSelectedCity.length === 0}
+            className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm focus:border-[color:var(--color-accent)] focus:outline-none disabled:opacity-50"
+          >
+            <option value="">Tất cả phường / xã</option>
+            {wardsForSelectedCity.map((ward) => (
+              <option key={ward} value={ward}>
+                {ward}
+              </option>
+            ))}
+          </select>
+        </div>
+      ) : null}
 
       <button
         type="button"

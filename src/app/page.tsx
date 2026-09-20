@@ -1,6 +1,8 @@
-import { listRooms } from "@/lib/db";
+import { listProperties, listRooms } from "@/lib/db";
+import { isAdminSession } from "@/lib/apiAuth";
 import RoomCard from "@/components/RoomCard";
 import FilterBar from "@/components/FilterBar";
+import LogoutButton from "@/components/LogoutButton";
 import type { RoomStatus } from "@/types";
 import { ROOM_STATUSES } from "@/types";
 
@@ -27,17 +29,32 @@ export default async function HomePage({
     : ["available"]; // default filter per spec: only show available rooms unless the visitor opts in to others
 
   const address = firstValue(sp.address);
+  const city = firstValue(sp.city);
+  const ward = firstValue(sp.ward);
   const priceBucketKey = firstValue(sp.priceBucket);
 
   const { bucketByKey } = await import("@/lib/priceBuckets");
   const bucket = priceBucketKey ? bucketByKey(priceBucketKey) : undefined;
 
-  const rooms = await listRooms({
-    status: statuses,
-    address,
-    priceMin: bucket?.min,
-    priceMax: bucket?.max ?? undefined,
-  });
+  const [rooms, admin, properties] = await Promise.all([
+    listRooms({
+      status: statuses,
+      city,
+      ward,
+      address,
+      priceMin: bucket?.min,
+      priceMax: bucket?.max ?? undefined,
+    }),
+    isAdminSession(),
+    listProperties(),
+  ]);
+
+  // Dropdown options come from real data (only city/ward combos that
+  // actually have an active property) — never a hand-typed list that could
+  // drift out of sync with what's actually listed.
+  const locationOptions = Array.from(
+    new Map(properties.map((p) => [`${p.city}\u0000${p.ward}`, { city: p.city, ward: p.ward }])).values()
+  );
 
   return (
     <div className="flex min-h-screen flex-col">
@@ -46,12 +63,27 @@ export default async function HomePage({
           <div className="text-xl font-bold tracking-tight text-[color:var(--color-accent-dark)]">
             Phòng Cho Thuê
           </div>
-          <a
-            href="/admin"
-            className="text-xs font-medium text-slate-400 hover:text-slate-600"
-          >
-            Quản trị
-          </a>
+          {admin ? (
+            <div className="flex items-center gap-3">
+              <span className="rounded-full bg-amber-100 px-2.5 py-1 text-xs font-medium text-amber-800">
+                Đang xem với quyền Admin
+              </span>
+              <a
+                href="/admin"
+                className="text-xs font-medium text-slate-400 hover:text-slate-600"
+              >
+                Vào trang quản trị
+              </a>
+              <LogoutButton redirectTo="/" className="text-xs font-medium text-slate-400 hover:text-slate-600" />
+            </div>
+          ) : (
+            <a
+              href="/admin"
+              className="text-xs font-medium text-slate-400 hover:text-slate-600"
+            >
+              Quản trị
+            </a>
+          )}
         </div>
       </header>
 
@@ -67,7 +99,7 @@ export default async function HomePage({
 
         <div className="grid grid-cols-1 gap-6 lg:grid-cols-[280px_1fr]">
           <aside className="lg:sticky lg:top-6 lg:self-start">
-            <FilterBar />
+            <FilterBar locationOptions={locationOptions} />
           </aside>
 
           <div className="flex flex-col gap-4">
@@ -76,7 +108,9 @@ export default async function HomePage({
                 Không tìm thấy phòng phù hợp với bộ lọc hiện tại.
               </div>
             ) : (
-              rooms.map((room) => <RoomCard key={room.id} room={room} />)
+              rooms.map((room) => (
+                <RoomCard key={room.id} room={room} admin={admin} />
+              ))
             )}
           </div>
         </div>

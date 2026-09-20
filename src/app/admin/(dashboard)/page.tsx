@@ -9,7 +9,10 @@ export const dynamic = "force-dynamic";
 export default async function AdminDashboardPage() {
   const [properties, rooms] = await Promise.all([
     listProperties({ includeInactive: true }),
-    listRooms(),
+    // includeInactiveProperties: an unlisted (deactivated) property's rooms
+    // must still show up here — deactivating just hides it from the public
+    // site, it doesn't delete anything.
+    listRooms(undefined, { includeInactiveProperties: true }),
   ]);
 
   const roomsByProperty = new Map<string, typeof rooms>();

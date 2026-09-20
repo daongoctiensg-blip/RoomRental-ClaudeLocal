@@ -16,6 +16,13 @@ export async function GET(request: NextRequest, { params }: Params) {
   const room = await getRoom(id);
   if (!room) return NextResponse.json({ error: "Not found" }, { status: 404 });
   const admin = isAdminRequest(request);
+  // Same rule as the public /rooms/[id] page: a deactivated room, or a room
+  // on a deactivated property, must be as unreachable as a missing id for a
+  // non-admin caller — this REST endpoint is a separate code path from that
+  // page and needs the same check independently.
+  if (!admin && (!room.isActive || !room.property.isActive)) {
+    return NextResponse.json({ error: "Not found" }, { status: 404 });
+  }
   return NextResponse.json({ room: admin ? room : toPublicRoom(room) });
 }
 
