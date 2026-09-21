@@ -52,15 +52,22 @@ export default async function HomePage({
 
   // Dropdown options come from real data (only city/ward combos that
   // actually have an active property) — never a hand-typed list that could
-  // drift out of sync with what's actually listed.
+  // drift out of sync with what's actually listed. Filter out any property
+  // that hasn't had city/ward filled in yet (blank strings) — otherwise an
+  // unfilled property renders as a blank, unselectable option in both
+  // dropdowns instead of just not contributing one.
   const locationOptions = Array.from(
-    new Map(properties.map((p) => [`${p.city}\u0000${p.ward}`, { city: p.city, ward: p.ward }])).values()
+    new Map(
+      properties
+        .filter((p) => p.city && p.ward)
+        .map((p) => [`${p.city}\u0000${p.ward}`, { city: p.city, ward: p.ward }])
+    ).values()
   );
 
   return (
     <div className="flex min-h-screen flex-col">
       <header className="border-b border-black/5 bg-white">
-        <div className="mx-auto flex max-w-6xl items-center justify-between px-4 py-4">
+        <div className="mx-auto flex max-w-[1600px] items-center justify-between px-4 py-4 sm:px-6 lg:px-10">
           <div className="text-xl font-bold tracking-tight text-[color:var(--color-accent-dark)]">
             Phòng Cho Thuê
           </div>
@@ -88,7 +95,7 @@ export default async function HomePage({
         </div>
       </header>
 
-      <main className="mx-auto w-full max-w-6xl flex-1 px-4 py-6">
+      <main className="mx-auto w-full max-w-[1600px] flex-1 px-4 py-6 sm:px-6 lg:px-10">
         <div className="mb-6">
           <h1 className="text-2xl font-bold text-slate-900">
             Tìm thấy {rooms.length} phòng
