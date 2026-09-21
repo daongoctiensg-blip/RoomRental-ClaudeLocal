@@ -2,6 +2,7 @@ import { listProperties, listRooms } from "@/lib/db";
 import { isAdminSession } from "@/lib/apiAuth";
 import RoomCard from "@/components/RoomCard";
 import FilterBar from "@/components/FilterBar";
+import MainSearchBar from "@/components/MainSearchBar";
 import LogoutButton from "@/components/LogoutButton";
 import type { RoomStatus } from "@/types";
 import { ROOM_STATUSES } from "@/types";
@@ -97,9 +98,13 @@ export default async function HomePage({
           </p>
         </div>
 
-        <div className="grid grid-cols-1 gap-6 lg:grid-cols-[280px_1fr]">
+        <div className="mb-6">
+          <MainSearchBar locationOptions={locationOptions} />
+        </div>
+
+        <div className="grid grid-cols-1 gap-6 lg:grid-cols-[240px_1fr]">
           <aside className="lg:sticky lg:top-6 lg:self-start">
-            <FilterBar locationOptions={locationOptions} />
+            <FilterBar />
           </aside>
 
           <div className="flex flex-col gap-4">

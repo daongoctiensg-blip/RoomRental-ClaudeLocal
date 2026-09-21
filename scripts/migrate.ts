@@ -30,6 +30,36 @@ loadEnvFile();
 // support it). Do the "if not exists" check in code instead: read
 // information_schema first, only ALTER when the column/index is actually
 // missing. Safe to run on every migrate — a no-op once already applied.
+//
+// Found in QA: the information_schema-check-then-ALTER isn't atomic, so if
+// two deploys/migrate runs happen to overlap (deploy scripts sometimes
+// double-run), both can see the column/index missing and both attempt the
+// ALTER — the loser gets a real MySQL error (1060 duplicate column / 1061
+// duplicate key name), not a silent no-op. Since that specific failure mode
+// only ever means "someone else already added it, which is exactly the
+// state we wanted," it's caught and treated as success rather than crashing
+// the whole migrate run.
+const ER_DUP_FIELDNAME = 1060;
+const ER_DUP_KEYNAME = 1061;
+
+async function alterIfMissing(
+  pool: import("mysql2/promise").Pool,
+  sql: string,
+  label: string
+): Promise<void> {
+  try {
+    console.log(`${label}...`);
+    await pool.query(sql);
+  } catch (err) {
+    const errno = (err as { errno?: number }).errno;
+    if (errno === ER_DUP_FIELDNAME || errno === ER_DUP_KEYNAME) {
+      console.log(`${label}: already applied by a concurrent run, skipping.`);
+      return;
+    }
+    throw err;
+  }
+}
+
 async function ensureCityWardColumns(pool: import("mysql2/promise").Pool): Promise<void> {
   const [cols] = await pool.query(
     `SELECT COLUMN_NAME FROM information_schema.COLUMNS
@@ -39,15 +69,17 @@ async function ensureCityWardColumns(pool: import("mysql2/promise").Pool): Promi
   const existing = new Set((cols as { COLUMN_NAME: string }[]).map((c) => c.COLUMN_NAME));
 
   if (!existing.has("city")) {
-    console.log("Adding properties.city column...");
-    await pool.query(
-      "ALTER TABLE properties ADD COLUMN city VARCHAR(255) NOT NULL DEFAULT '' AFTER address_old"
+    await alterIfMissing(
+      pool,
+      "ALTER TABLE properties ADD COLUMN city VARCHAR(255) NOT NULL DEFAULT '' AFTER address_old",
+      "Adding properties.city column"
     );
   }
   if (!existing.has("ward")) {
-    console.log("Adding properties.ward column...");
-    await pool.query(
-      "ALTER TABLE properties ADD COLUMN ward VARCHAR(255) NOT NULL DEFAULT '' AFTER city"
+    await alterIfMissing(
+      pool,
+      "ALTER TABLE properties ADD COLUMN ward VARCHAR(255) NOT NULL DEFAULT '' AFTER city",
+      "Adding properties.ward column"
     );
   }
 
@@ -57,8 +89,11 @@ async function ensureCityWardColumns(pool: import("mysql2/promise").Pool): Promi
        AND INDEX_NAME = 'idx_properties_city_ward'`
   );
   if ((idx as unknown[]).length === 0) {
-    console.log("Adding idx_properties_city_ward index...");
-    await pool.query("ALTER TABLE properties ADD INDEX idx_properties_city_ward (city, ward)");
+    await alterIfMissing(
+      pool,
+      "ALTER TABLE properties ADD INDEX idx_properties_city_ward (city, ward)",
+      "Adding idx_properties_city_ward index"
+    );
   }
 }
 

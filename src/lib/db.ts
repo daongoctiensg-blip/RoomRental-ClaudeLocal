@@ -258,6 +258,23 @@ function validatePropertyMoneyFields(input: {
         return `${label} trong chính sách huỷ cọc phải trong khoảng 0-100%.`;
       }
     }
+    // Found in QA: calculateCancellationSettlement() only ever uses
+    // saleSharePercent and derives the landlord's share as the remainder
+    // (100% - sale%), for correct rounding (see comment there). It never
+    // reads landlordSharePercent at all. Before this check, the UI only
+    // showed a soft warning ("nên bằng 100%") that was never enforced —
+    // an admin could save landlord=70/sale=50, and the actual money paid
+    // out would silently use landlord=50 (the true complement of sale),
+    // disagreeing with the 70 shown everywhere in the admin/sale UI. This
+    // makes the two fields a hard-required pair so what's displayed is
+    // always what's actually paid.
+    if (
+      typeof landlordSharePercent === "number" &&
+      typeof saleSharePercent === "number" &&
+      Math.abs(landlordSharePercent + saleSharePercent - 100) > 0.01
+    ) {
+      return "Tỉ lệ chủ nhà và tỉ lệ sale trong chính sách huỷ cọc phải cộng lại đúng bằng 100%.";
+    }
   }
 
   if (input.commissionPolicy) {
@@ -277,15 +294,42 @@ function validatePropertyMoneyFields(input: {
   return null;
 }
 
+/** Auto-fills lat/lng from the address via geocodeAddress() when the caller
+ * didn't supply coordinates explicitly. Best-effort — a geocoding miss just
+ * leaves lat/lng unset, it never blocks creating/saving the property. This
+ * is what lets the "nearby" radius search in listRooms work without the
+ * admin ever having to type in coordinates by hand (addendum §6d).
+ *
+ * Found in QA (this pass): this function existed nowhere in the codebase at
+ * all — createProperty/updateProperty never called geocodeAddress, so every
+ * property created since the original MySQL port has lat/lng permanently
+ * NULL unless entered by hand, silently making the nearby-radius search
+ * (§6d) a no-op for it forever. Confirmed live: created a property with no
+ * lat/lng in the payload, got back lat: undefined, lng: undefined. */
+async function geocodeForPropertySave(
+  addressNew: string,
+  addressOld: string | undefined
+): Promise<{ lat: number; lng: number } | null> {
+  const query = addressOld ? `${addressNew}, ${addressOld}` : addressNew;
+  return geocodeAddress(query);
+}
+
 export async function createProperty(
   input: PropertyInput
 ): Promise<Property | { error: string }> {
   const validationError = validatePropertyMoneyFields(input);
   if (validationError) return { error: validationError };
 
+  const geocoded =
+    input.lat == null || input.lng == null
+      ? await geocodeForPropertySave(input.addressNew, input.addressOld)
+      : null;
+
   const pool = getPool();
   const property: Property = {
     ...input,
+    lat: input.lat ?? geocoded?.lat,
+    lng: input.lng ?? geocoded?.lng,
     id: `prop-${randomUUID()}`,
     createdAt: nowIso(),
     updatedAt: nowIso(),
@@ -356,26 +400,87 @@ export async function updateProperty(
   id: string,
   input: Partial<PropertyInput>
 ): Promise<Property | { error: string } | undefined> {
-  const validationError = validatePropertyMoneyFields(input);
+  // Found in QA (this pass): depositPolicy/depositCancellationPolicy/
+  // saleBonusPolicy are each stored as ONE JSON column, and this function
+  // used to write whatever partial object the caller sent as the WHOLE
+  // column value — so e.g. PUT {depositCancellationPolicy:
+  // {landlordSharePercent: 70}} (missing saleSharePercent) silently wiped
+  // saleSharePercent from storage entirely. That bypassed the sum-to-100
+  // check (which only fires when BOTH fields are present as numbers in the
+  // same request) and broke real money math downstream:
+  // calculateCancellationSettlement() ended up doing arithmetic against
+  // `undefined`, and landlordShareOfRemainder/saleShareOfRemainder/
+  // landlordTotal/saleTotal all came back NaN (serialized as `null` in the
+  // JSON response) on the very next cancellation. Confirmed live: sent that
+  // partial payload, then ran a real deposit+cancel and got exactly that —
+  // all four fields null instead of numbers.
+  //
+  // Fix: merge each partial policy object onto the EXISTING stored one
+  // before validating/saving, so the column can never end up missing a
+  // sibling field no matter how the caller shapes the request — the same
+  // "don't trust the caller's shape" principle finding #1 (money-field
+  // validation) already established for this file.
+  const existingForMerge =
+    input.depositPolicy || input.depositCancellationPolicy || input.saleBonusPolicy
+      ? await getProperty(id)
+      : undefined;
+
+  const mergedInput: Partial<PropertyInput> = { ...input };
+  if (input.depositPolicy && existingForMerge) {
+    mergedInput.depositPolicy = { ...existingForMerge.depositPolicy, ...input.depositPolicy };
+  }
+  if (input.depositCancellationPolicy && existingForMerge) {
+    mergedInput.depositCancellationPolicy = {
+      ...existingForMerge.depositCancellationPolicy,
+      ...input.depositCancellationPolicy,
+    };
+  }
+  if (input.saleBonusPolicy && existingForMerge) {
+    mergedInput.saleBonusPolicy = {
+      ...existingForMerge.saleBonusPolicy,
+      ...input.saleBonusPolicy,
+    };
+  }
+
+  const validationError = validatePropertyMoneyFields(mergedInput);
   if (validationError) return { error: validationError };
+
+  // Only re-geocode when the address actually changed and the caller didn't
+  // pass explicit coordinates — avoids an outbound call on every unrelated
+  // edit (price change, photo swap, etc). Reuses existingForMerge when
+  // already fetched above; otherwise fetches fresh just for this check.
+  let geocoded: { lat: number; lng: number } | null = null;
+  if (input.addressNew !== undefined && input.lat === undefined && input.lng === undefined) {
+    const existing = existingForMerge ?? (await getProperty(id));
+    if (existing && existing.addressNew !== input.addressNew) {
+      geocoded = await geocodeForPropertySave(
+        input.addressNew,
+        input.addressOld ?? existing.addressOld
+      );
+    }
+  }
 
   const pool = getPool();
   const sets: string[] = [];
   const values: unknown[] = [];
 
   for (const [key, column] of Object.entries(PROPERTY_COLUMN_MAP)) {
-    if (key in input) {
-      const v = (input as Record<string, unknown>)[key];
+    if (key in mergedInput) {
+      const v = (mergedInput as Record<string, unknown>)[key];
       sets.push(`${column} = ?`);
       values.push(key === "isActive" ? (v ? 1 : 0) : v ?? null);
     }
   }
   for (const [key, column] of Object.entries(PROPERTY_JSON_COLUMN_MAP)) {
-    if (key in input) {
-      const v = (input as Record<string, unknown>)[key];
+    if (key in mergedInput) {
+      const v = (mergedInput as Record<string, unknown>)[key];
       sets.push(`${column} = ?`);
       values.push(v === undefined ? null : JSON.stringify(v));
     }
+  }
+  if (geocoded) {
+    sets.push("lat = ?", "lng = ?");
+    values.push(geocoded.lat, geocoded.lng);
   }
   if (sets.length === 0) return getProperty(id);
 
