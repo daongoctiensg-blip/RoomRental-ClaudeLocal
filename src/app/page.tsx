@@ -30,7 +30,16 @@ export default async function HomePage({
     : ["available"]; // default filter per spec: only show available rooms unless the visitor opts in to others
 
   const address = firstValue(sp.address);
-  const city = firstValue(sp.city);
+  // Default to Thành phố Hồ Chí Minh when the customer hasn't touched the
+  // city filter at all (no ?city= in the URL) — Boss's properties are all
+  // there right now, so an empty first-visit homepage looked broken. "all"
+  // is an explicit marker meaning the customer picked "Tất cả thành phố /
+  // tỉnh" themselves (see MainSearchBar's setCity) — distinct from the param
+  // being absent, so "show everything" stays reachable and doesn't get
+  // silently overridden back to the default on the next render.
+  const DEFAULT_CITY = "Thành phố Hồ Chí Minh";
+  const cityRaw = firstValue(sp.city);
+  const city = cityRaw === undefined ? DEFAULT_CITY : cityRaw === "all" ? undefined : cityRaw;
   const ward = firstValue(sp.ward);
   const district = firstValue(sp.district);
   const priceBucketKey = firstValue(sp.priceBucket);

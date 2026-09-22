@@ -43,7 +43,12 @@ export default function MainSearchBar() {
     searchParams.get("address") ?? ""
   );
 
-  const selectedCity = searchParams.get("city") ?? "";
+  const selectedCity = (() => {
+    const raw = searchParams.get("city");
+    if (raw === null) return "Thành phố Hồ Chí Minh"; // matches page.tsx's default
+    if (raw === "all") return "";
+    return raw;
+  })();
   const selectedWard = searchParams.get("ward") ?? "";
   const selectedDistrict = searchParams.get("district") ?? "";
 
@@ -84,7 +89,11 @@ export default function MainSearchBar() {
       if (value) {
         params.set("city", value);
       } else {
-        params.delete("city");
+        // Explicit "Tất cả thành phố / tỉnh" — set the "all" marker rather
+        // than deleting the param, so this choice sticks instead of
+        // silently reverting to the default city (Thành phố Hồ Chí Minh)
+        // on the next render.
+        params.set("city", "all");
       }
       // Ward list depends on the selected city — an old ward selection from
       // a different city would silently filter out everything, so clear it.
@@ -123,7 +132,11 @@ export default function MainSearchBar() {
   const clearAll = () => {
     setAddressInput("");
     startTransition(() => {
-      router.push(pathname);
+      // "Xoá bộ lọc" means truly everything, everywhere — push city=all
+      // explicitly rather than just clearing all params, otherwise the
+      // absent city param would immediately re-trigger the Hồ Chí Minh
+      // default in page.tsx and this button would look like it did nothing.
+      router.push(`${pathname}?city=all`);
     });
   };
 
