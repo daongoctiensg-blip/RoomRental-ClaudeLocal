@@ -26,6 +26,9 @@ export async function GET(request: NextRequest) {
   const ward = searchParams.get("ward");
   if (ward) filter.ward = ward;
 
+  const district = searchParams.get("district");
+  if (district) filter.district = district;
+
   const statusParam = searchParams.get("status");
   if (statusParam) {
     const statuses = statusParam

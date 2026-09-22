@@ -3,7 +3,7 @@
 import { useRouter, useSearchParams, usePathname } from "next/navigation";
 import { useCallback, useState, useTransition } from "react";
 
-type LocationOption = { city: string; ward: string };
+type LocationOption = { city: string; ward: string; district: string };
 
 /**
  * The primary, always-visible search controls: free-text address search plus
@@ -31,6 +31,7 @@ export default function MainSearchBar({
 
   const selectedCity = searchParams.get("city") ?? "";
   const selectedWard = searchParams.get("ward") ?? "";
+  const selectedDistrict = searchParams.get("district") ?? "";
 
   const cities = Array.from(new Set(locationOptions.map((o) => o.city))).sort();
   const wardsForSelectedCity = Array.from(
@@ -40,6 +41,11 @@ export default function MainSearchBar({
         .map((o) => o.ward)
     )
   ).sort();
+  // Quận/Huyện comes from the OLD address system (addressOld) — a separate,
+  // independent hierarchy from city/ward (which come from addressNew), so
+  // it's NOT filtered by the selected city/ward the way ward is filtered by
+  // city above.
+  const districts = Array.from(new Set(locationOptions.map((o) => o.district))).sort();
 
   const pushParams = useCallback(
     (mutate: (params: URLSearchParams) => void) => {
@@ -86,10 +92,21 @@ export default function MainSearchBar({
     });
   };
 
+  const setDistrict = (value: string) => {
+    pushParams((params) => {
+      if (value) {
+        params.set("district", value);
+      } else {
+        params.delete("district");
+      }
+    });
+  };
+
   const hasAnyFilter =
     Boolean(searchParams.get("address")) ||
     Boolean(selectedCity) ||
     Boolean(selectedWard) ||
+    Boolean(selectedDistrict) ||
     Boolean(searchParams.get("priceBucket")) ||
     Boolean(searchParams.get("status"));
 
@@ -122,35 +139,51 @@ export default function MainSearchBar({
           </button>
         </form>
 
-        {cities.length > 0 ? (
-          <div className="flex flex-col gap-2 sm:flex-row md:w-[420px] md:shrink-0">
-            <select
-              value={selectedCity}
-              onChange={(e) => setCity(e.target.value)}
-              className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm focus:border-[color:var(--color-accent)] focus:outline-none sm:w-1/2"
-            >
-              <option value="">Tất cả thành phố / tỉnh</option>
-              {cities.map((city) => (
-                <option key={city} value={city}>
-                  {city}
-                </option>
-              ))}
-            </select>
-            <select
-              value={selectedWard}
-              onChange={(e) => setWard(e.target.value)}
-              disabled={wardsForSelectedCity.length === 0}
-              className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm focus:border-[color:var(--color-accent)] focus:outline-none disabled:opacity-50 sm:w-1/2"
-            >
-              <option value="">Tất cả phường / xã</option>
-              {wardsForSelectedCity.map((ward) => (
-                <option key={ward} value={ward}>
-                  {ward}
-                </option>
-              ))}
-            </select>
-          </div>
-        ) : null}
+        {/* Always rendered regardless of whether any real city/ward/district
+           data exists yet — hiding this entirely when locationOptions is
+           empty (e.g. before the one seeded property has had its city/ward/
+           district filled in via /admin) made the whole search feature look
+           like it had vanished. It just shows only the "Tất cả..." default
+           until real data exists. */}
+        <div className="flex flex-col gap-2 sm:flex-row md:w-[620px] md:shrink-0">
+          <select
+            value={selectedCity}
+            onChange={(e) => setCity(e.target.value)}
+            className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm focus:border-[color:var(--color-accent)] focus:outline-none sm:w-1/3"
+          >
+            <option value="">Tất cả thành phố / tỉnh</option>
+            {cities.map((city) => (
+              <option key={city} value={city}>
+                {city}
+              </option>
+            ))}
+          </select>
+          <select
+            value={selectedWard}
+            onChange={(e) => setWard(e.target.value)}
+            disabled={wardsForSelectedCity.length === 0}
+            className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm focus:border-[color:var(--color-accent)] focus:outline-none disabled:opacity-50 sm:w-1/3"
+          >
+            <option value="">Tất cả phường / xã</option>
+            {wardsForSelectedCity.map((ward) => (
+              <option key={ward} value={ward}>
+                {ward}
+              </option>
+            ))}
+          </select>
+          <select
+            value={selectedDistrict}
+            onChange={(e) => setDistrict(e.target.value)}
+            className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm focus:border-[color:var(--color-accent)] focus:outline-none sm:w-1/3"
+          >
+            <option value="">Tất cả quận / huyện</option>
+            {districts.map((district) => (
+              <option key={district} value={district}>
+                {district}
+              </option>
+            ))}
+          </select>
+        </div>
 
         {hasAnyFilter ? (
           <button

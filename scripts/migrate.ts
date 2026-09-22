@@ -64,7 +64,7 @@ async function ensureCityWardColumns(pool: import("mysql2/promise").Pool): Promi
   const [cols] = await pool.query(
     `SELECT COLUMN_NAME FROM information_schema.COLUMNS
      WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'properties'
-       AND COLUMN_NAME IN ('city', 'ward')`
+       AND COLUMN_NAME IN ('city', 'ward', 'district')`
   );
   const existing = new Set((cols as { COLUMN_NAME: string }[]).map((c) => c.COLUMN_NAME));
 
@@ -82,6 +82,13 @@ async function ensureCityWardColumns(pool: import("mysql2/promise").Pool): Promi
       "Adding properties.ward column"
     );
   }
+  if (!existing.has("district")) {
+    await alterIfMissing(
+      pool,
+      "ALTER TABLE properties ADD COLUMN district VARCHAR(255) NOT NULL DEFAULT '' AFTER ward",
+      "Adding properties.district column"
+    );
+  }
 
   const [idx] = await pool.query(
     `SELECT INDEX_NAME FROM information_schema.STATISTICS
@@ -93,6 +100,19 @@ async function ensureCityWardColumns(pool: import("mysql2/promise").Pool): Promi
       pool,
       "ALTER TABLE properties ADD INDEX idx_properties_city_ward (city, ward)",
       "Adding idx_properties_city_ward index"
+    );
+  }
+
+  const [idxDistrict] = await pool.query(
+    `SELECT INDEX_NAME FROM information_schema.STATISTICS
+     WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'properties'
+       AND INDEX_NAME = 'idx_properties_district'`
+  );
+  if ((idxDistrict as unknown[]).length === 0) {
+    await alterIfMissing(
+      pool,
+      "ALTER TABLE properties ADD INDEX idx_properties_district (district)",
+      "Adding idx_properties_district index"
     );
   }
 }
@@ -137,12 +157,12 @@ async function main() {
   for (const p of seed.properties) {
     await pool.query(
       `INSERT INTO properties
-        (id, name, address_new, address_old, city, ward, lat, lng, contact_phone,
+        (id, name, address_new, address_old, city, ward, district, lat, lng, contact_phone,
          landlord_name, landlord_contact_phone, landlord_zalo,
          amenities_shared, transport_notes, utility_fee_versions,
          deposit_policy, deposit_cancellation_policy, commission_policy,
          sale_bonus_policy, images, is_active, created_at, updated_at)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       [
         p.id,
         p.name,
@@ -150,6 +170,7 @@ async function main() {
         p.addressOld ?? null,
         p.city,
         p.ward,
+        p.district,
         p.lat ?? null,
         p.lng ?? null,
         p.contactPhone,

@@ -88,6 +88,7 @@ function rowToProperty(row: any): Property {
     addressOld: row.address_old ?? undefined,
     city: row.city,
     ward: row.ward,
+    district: row.district,
     lat: row.lat ?? undefined,
     lng: row.lng ?? undefined,
     contactPhone: row.contact_phone,
@@ -336,12 +337,12 @@ export async function createProperty(
   };
   await pool.query(
     `INSERT INTO properties
-      (id, name, address_new, address_old, city, ward, lat, lng, contact_phone,
+      (id, name, address_new, address_old, city, ward, district, lat, lng, contact_phone,
        landlord_name, landlord_contact_phone, landlord_zalo,
        amenities_shared, transport_notes, utility_fee_versions,
        deposit_policy, deposit_cancellation_policy, commission_policy,
        sale_bonus_policy, images, is_active, created_at, updated_at)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
     [
       property.id,
       property.name,
@@ -349,6 +350,7 @@ export async function createProperty(
       property.addressOld ?? null,
       property.city,
       property.ward,
+      property.district,
       property.lat ?? null,
       property.lng ?? null,
       property.contactPhone,
@@ -377,6 +379,7 @@ const PROPERTY_COLUMN_MAP: Record<string, string> = {
   addressOld: "address_old",
   city: "city",
   ward: "ward",
+  district: "district",
   lat: "lat",
   lng: "lng",
   contactPhone: "contact_phone",
@@ -658,9 +661,9 @@ export async function listRooms(
       values.push(filter.priceMax);
     }
     // Dropdown filters (exact match, no geocoding — the customer explicitly
-    // picked a city/ward, so just list everything in it). Independent from
-    // the free-text `address` search box below, which is the only thing
-    // that triggers fuzzy keyword/nearby-radius matching.
+    // picked a city/ward/district, so just list everything in it).
+    // Independent from the free-text `address` search box below, which is
+    // the only thing that triggers fuzzy keyword/nearby-radius matching.
     if (filter?.city) {
       clauses.push("LOWER(TRIM(p.city)) = ?");
       values.push(filter.city.trim().toLowerCase());
@@ -668,6 +671,10 @@ export async function listRooms(
     if (filter?.ward) {
       clauses.push("LOWER(TRIM(p.ward)) = ?");
       values.push(filter.ward.trim().toLowerCase());
+    }
+    if (filter?.district) {
+      clauses.push("LOWER(TRIM(p.district)) = ?");
+      values.push(filter.district.trim().toLowerCase());
     }
 
     // nestTables: true — rooms and properties share several column names

@@ -26,6 +26,10 @@ CREATE TABLE IF NOT EXISTS properties (
   -- without depending on the ALTER statements running at all.
   city VARCHAR(255) NOT NULL DEFAULT '',
   ward VARCHAR(255) NOT NULL DEFAULT '',
+  -- district: Quận/Huyện, from the OLD address system (address_old) — a
+  -- separate exact-match dropdown from ward, since many customers still
+  -- think/search in terms of the old district names.
+  district VARCHAR(255) NOT NULL DEFAULT '',
   lat DOUBLE NULL,
   lng DOUBLE NULL,
   contact_phone VARCHAR(50) NOT NULL,

@@ -32,6 +32,7 @@ export default async function HomePage({
   const address = firstValue(sp.address);
   const city = firstValue(sp.city);
   const ward = firstValue(sp.ward);
+  const district = firstValue(sp.district);
   const priceBucketKey = firstValue(sp.priceBucket);
 
   const { bucketByKey } = await import("@/lib/priceBuckets");
@@ -42,6 +43,7 @@ export default async function HomePage({
       status: statuses,
       city,
       ward,
+      district,
       address,
       priceMin: bucket?.min,
       priceMax: bucket?.max ?? undefined,
@@ -50,17 +52,21 @@ export default async function HomePage({
     listProperties(),
   ]);
 
-  // Dropdown options come from real data (only city/ward combos that
-  // actually have an active property) — never a hand-typed list that could
-  // drift out of sync with what's actually listed. Filter out any property
-  // that hasn't had city/ward filled in yet (blank strings) — otherwise an
-  // unfilled property renders as a blank, unselectable option in both
-  // dropdowns instead of just not contributing one.
+  // Dropdown options come from real data (only city/ward/district combos
+  // that actually have an active property) — never a hand-typed list that
+  // could drift out of sync with what's actually listed. Filter out any
+  // property that hasn't had city/ward filled in yet (blank strings) —
+  // otherwise an unfilled property renders as a blank, unselectable option
+  // in both dropdowns instead of just not contributing one. district is
+  // allowed to be blank independently (it's optional/from the old address
+  // system) — a property missing only district still contributes its
+  // city/ward pair, just with an empty district value that the dropdown's
+  // own de-duplication naturally drops if no property actually has one.
   const locationOptions = Array.from(
     new Map(
       properties
         .filter((p) => p.city && p.ward)
-        .map((p) => [`${p.city}\u0000${p.ward}`, { city: p.city, ward: p.ward }])
+        .map((p) => [`${p.city}\u0000${p.ward}\u0000${p.district}`, { city: p.city, ward: p.ward, district: p.district }])
     ).values()
   );
 

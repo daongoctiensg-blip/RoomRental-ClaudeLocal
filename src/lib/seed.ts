@@ -16,6 +16,7 @@ export function buildSeedDatabase(): Database {
         addressOld: "Quận 7, Thành phố Hồ Chí Minh",
         city: "Thành phố Hồ Chí Minh",
         ward: "Phường Phú Thuận",
+        district: "Quận 7",
         lat: 10.7339,
         lng: 106.7191,
         contactPhone: "0768654627",

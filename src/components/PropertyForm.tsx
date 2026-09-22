@@ -11,6 +11,7 @@ type FormState = {
   addressOld: string;
   city: string;
   ward: string;
+  district: string;
   contactPhone: string;
   landlordName: string;
   landlordContactPhone: string;
@@ -52,6 +53,7 @@ function toFormState(property?: Property): FormState {
     addressOld: property?.addressOld ?? "",
     city: property?.city ?? "",
     ward: property?.ward ?? "",
+    district: property?.district ?? "",
     contactPhone: property?.contactPhone ?? "",
     landlordName: property?.landlordName ?? "",
     landlordContactPhone: property?.landlordContactPhone ?? "",
@@ -134,6 +136,7 @@ export default function PropertyForm({ property }: { property?: Property }) {
       addressOld: form.addressOld || undefined,
       city: form.city,
       ward: form.ward,
+      district: form.district,
       contactPhone: form.contactPhone,
       landlordName: form.landlordName || undefined,
       landlordContactPhone: form.landlordContactPhone || undefined,
@@ -251,6 +254,15 @@ export default function PropertyForm({ property }: { property?: Property }) {
             placeholder="VD: Phường Phú Thuận"
             value={form.ward}
             onChange={(e) => update("ward", e.target.value)}
+            className={inputClass}
+          />
+        </Field>
+        <Field label="Quận / Huyện (theo địa chỉ cũ — dùng cho bộ lọc dropdown trên trang khách)">
+          <input
+            required
+            placeholder="VD: Quận 7"
+            value={form.district}
+            onChange={(e) => update("district", e.target.value)}
             className={inputClass}
           />
         </Field>

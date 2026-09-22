@@ -100,6 +100,11 @@ export interface Property {
   city: string;
   /** Phường/Xã — same idea as `city`, for the "Phường/Xã" filter dropdown. */
   ward: string;
+  /** Quận/Huyện — from the OLD address system (addressOld), e.g. "Quận 7".
+   * Kept separate from `ward` (which reads off the NEW addressNew) because
+   * many customers still search/think in terms of the old district names.
+   * Same exact-match dropdown pattern as city/ward — no fuzzy matching. */
+  district: string;
   lat?: number;
   lng?: number;
   /** Public number customers call/Zalo to arrange a viewing. */
@@ -194,6 +199,7 @@ export interface RoomFilter {
    * keyword/nearby-radius search. */
   city?: string;
   ward?: string;
+  district?: string;
   /** Free-text search box query — fuzzy keyword matching (src/lib/search.ts)
    * plus nearby-radius geocoding (src/lib/geocode.ts). This is the ONLY
    * filter that triggers geocoding; city/ward above never do. */
