@@ -1,4 +1,4 @@
-import { listProperties, listRooms } from "@/lib/db";
+import { listRooms } from "@/lib/db";
 import { isAdminSession } from "@/lib/apiAuth";
 import RoomCard from "@/components/RoomCard";
 import FilterBar from "@/components/FilterBar";
@@ -38,7 +38,7 @@ export default async function HomePage({
   const { bucketByKey } = await import("@/lib/priceBuckets");
   const bucket = priceBucketKey ? bucketByKey(priceBucketKey) : undefined;
 
-  const [rooms, admin, properties] = await Promise.all([
+  const [rooms, admin] = await Promise.all([
     listRooms({
       status: statuses,
       city,
@@ -49,26 +49,7 @@ export default async function HomePage({
       priceMax: bucket?.max ?? undefined,
     }),
     isAdminSession(),
-    listProperties(),
   ]);
-
-  // Dropdown options come from real data (only city/ward/district combos
-  // that actually have an active property) — never a hand-typed list that
-  // could drift out of sync with what's actually listed. Filter out any
-  // property that hasn't had city/ward filled in yet (blank strings) —
-  // otherwise an unfilled property renders as a blank, unselectable option
-  // in both dropdowns instead of just not contributing one. district is
-  // allowed to be blank independently (it's optional/from the old address
-  // system) — a property missing only district still contributes its
-  // city/ward pair, just with an empty district value that the dropdown's
-  // own de-duplication naturally drops if no property actually has one.
-  const locationOptions = Array.from(
-    new Map(
-      properties
-        .filter((p) => p.city && p.ward)
-        .map((p) => [`${p.city}\u0000${p.ward}\u0000${p.district}`, { city: p.city, ward: p.ward, district: p.district }])
-    ).values()
-  );
 
   return (
     <div className="flex min-h-screen flex-col">
@@ -112,7 +93,7 @@ export default async function HomePage({
         </div>
 
         <div className="mb-6">
-          <MainSearchBar locationOptions={locationOptions} />
+          <MainSearchBar />
         </div>
 
         <div className="grid grid-cols-1 gap-6 lg:grid-cols-[240px_1fr]">

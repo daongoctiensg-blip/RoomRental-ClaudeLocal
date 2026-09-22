@@ -1,8 +1,11 @@
 "use client";
 
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import { apiUrl } from "@/lib/basePath";
+import vnProvinces from "@/data/vn-provinces.json";
+import vnWards from "@/data/vn-wards.json";
+import vnHcmDistricts from "@/data/vn-hcm-districts.json";
 import type { CommissionTier, Property, UtilityFeeVersion } from "@/types";
 
 type FormState = {
@@ -113,6 +116,15 @@ function feeChanged(current: UtilityFeeVersion | undefined, form: FormState) {
 export default function PropertyForm({ property }: { property?: Property }) {
   const router = useRouter();
   const [form, setForm] = useState<FormState>(toFormState(property));
+  const provinceCodeByName = useMemo(
+    () => new Map(vnProvinces.map((p) => [p.name, p.code])),
+    []
+  );
+  const wardsForCity = useMemo(() => {
+    const code = provinceCodeByName.get(form.city);
+    if (!code) return [];
+    return vnWards.filter((w) => w.pc === code).map((w) => w.w);
+  }, [provinceCodeByName, form.city]);
   const [commission, setCommission] = useState<CommissionTier[]>(
     property?.commissionPolicy ?? [
       { contractDurationMonths: 6, commissionPercent: 50 },
@@ -240,31 +252,55 @@ export default function PropertyForm({ property }: { property?: Property }) {
           />
         </Field>
         <Field label="Thành phố / Tỉnh (dùng cho bộ lọc dropdown trên trang khách)">
-          <input
+          <select
             required
-            placeholder="VD: Thành phố Hồ Chí Minh"
             value={form.city}
-            onChange={(e) => update("city", e.target.value)}
+            onChange={(e) => {
+              update("city", e.target.value);
+              update("ward", ""); // đổi tỉnh thì phường/xã cũ không còn hợp lệ nữa
+            }}
             className={inputClass}
-          />
+          >
+            <option value="">— Chọn thành phố / tỉnh —</option>
+            {vnProvinces.map((p) => (
+              <option key={p.code} value={p.name}>
+                {p.name}
+              </option>
+            ))}
+          </select>
         </Field>
         <Field label="Phường / Xã (dùng cho bộ lọc dropdown trên trang khách)">
-          <input
+          <select
             required
-            placeholder="VD: Phường Phú Thuận"
             value={form.ward}
             onChange={(e) => update("ward", e.target.value)}
+            disabled={!form.city}
             className={inputClass}
-          />
+          >
+            <option value="">
+              {form.city ? "— Chọn phường / xã —" : "Chọn thành phố/tỉnh trước"}
+            </option>
+            {wardsForCity.map((w) => (
+              <option key={w} value={w}>
+                {w}
+              </option>
+            ))}
+          </select>
         </Field>
         <Field label="Quận / Huyện (theo địa chỉ cũ — dùng cho bộ lọc dropdown trên trang khách)">
-          <input
+          <select
             required
-            placeholder="VD: Quận 7"
             value={form.district}
             onChange={(e) => update("district", e.target.value)}
             className={inputClass}
-          />
+          >
+            <option value="">— Chọn quận / huyện —</option>
+            {vnHcmDistricts.map((d) => (
+              <option key={d} value={d}>
+                {d}
+              </option>
+            ))}
+          </select>
         </Field>
         <Field label="Số điện thoại liên hệ (công khai — khách gọi/Zalo số này)">
           <input

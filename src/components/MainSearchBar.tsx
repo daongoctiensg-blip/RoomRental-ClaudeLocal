@@ -1,25 +1,39 @@
 "use client";
 
 import { useRouter, useSearchParams, usePathname } from "next/navigation";
-import { useCallback, useState, useTransition } from "react";
-
-type LocationOption = { city: string; ward: string; district: string };
+import { useCallback, useMemo, useState, useTransition } from "react";
+import vnProvinces from "@/data/vn-provinces.json";
+import vnWards from "@/data/vn-wards.json";
+import vnHcmDistricts from "@/data/vn-hcm-districts.json";
 
 /**
  * The primary, always-visible search controls: free-text address search plus
- * the city/ward exact-match dropdowns. Moved to the top of the page (full
- * width, above the listing) per the owner's request — these are the filters
- * people reach for first, so they shouldn't be tucked away in a sidebar.
- * Secondary refinements (status, price bucket) stay in <FilterBar> below the
- * listing grid.
+ * the city/ward/district exact-match dropdowns. Moved to the top of the page
+ * (full width, above the listing) per the owner's request — these are the
+ * filters people reach for first, so they shouldn't be tucked away in a
+ * sidebar. Secondary refinements (status, price bucket) stay in <FilterBar>
+ * below the listing grid.
+ *
+ * City/ward options come from a bundled master list of Vietnam's official
+ * administrative divisions (34 provinces/cities, ~3,320 wards/communes,
+ * post the July 2025 merger — see src/data/vn-provinces.json /
+ * vn-wards.json, sourced from https://github.com/zuydd/vn-geo) — NOT derived
+ * from which properties currently exist. A customer can pick any real
+ * province/ward even if this platform doesn't have a listing there yet; an
+ * earlier version derived the list from existing properties instead, which
+ * meant the dropdowns were empty (or vanished entirely) until at least one
+ * property had its city/ward filled in — the owner explicitly asked for the
+ * full official list instead.
+ *
+ * Quận/Huyện is a separate, independent dropdown tied to the OLD
+ * pre-2025 address system (addressOld) rather than the new city/ward
+ * hierarchy — kept because many customers still search/think in terms of
+ * the old district names. Currently only Hồ Chí Minh City's 22 pre-merger
+ * districts are bundled (src/data/vn-hcm-districts.json) since that's
+ * where this platform's properties actually are; extending to other
+ * provinces' old districts would need their own pre-2025 district lists.
  */
-export default function MainSearchBar({
-  locationOptions = [],
-}: {
-  /** Every distinct {city, ward} pair that actually has an active property
-   * — the dropdowns only ever offer choices that can return results. */
-  locationOptions?: LocationOption[];
-}) {
+export default function MainSearchBar() {
   const router = useRouter();
   const pathname = usePathname();
   const searchParams = useSearchParams();
@@ -33,19 +47,15 @@ export default function MainSearchBar({
   const selectedWard = searchParams.get("ward") ?? "";
   const selectedDistrict = searchParams.get("district") ?? "";
 
-  const cities = Array.from(new Set(locationOptions.map((o) => o.city))).sort();
-  const wardsForSelectedCity = Array.from(
-    new Set(
-      locationOptions
-        .filter((o) => !selectedCity || o.city === selectedCity)
-        .map((o) => o.ward)
-    )
-  ).sort();
-  // Quận/Huyện comes from the OLD address system (addressOld) — a separate,
-  // independent hierarchy from city/ward (which come from addressNew), so
-  // it's NOT filtered by the selected city/ward the way ward is filtered by
-  // city above.
-  const districts = Array.from(new Set(locationOptions.map((o) => o.district))).sort();
+  const provinceCodeByName = useMemo(
+    () => new Map(vnProvinces.map((p) => [p.name, p.code])),
+    []
+  );
+  const wardsForSelectedCity = useMemo(() => {
+    const code = provinceCodeByName.get(selectedCity);
+    if (!code) return [];
+    return vnWards.filter((w) => w.pc === code).map((w) => w.w);
+  }, [provinceCodeByName, selectedCity]);
 
   const pushParams = useCallback(
     (mutate: (params: URLSearchParams) => void) => {
@@ -139,12 +149,6 @@ export default function MainSearchBar({
           </button>
         </form>
 
-        {/* Always rendered regardless of whether any real city/ward/district
-           data exists yet — hiding this entirely when locationOptions is
-           empty (e.g. before the one seeded property has had its city/ward/
-           district filled in via /admin) made the whole search feature look
-           like it had vanished. It just shows only the "Tất cả..." default
-           until real data exists. */}
         <div className="flex flex-col gap-2 sm:flex-row md:w-[620px] md:shrink-0">
           <select
             value={selectedCity}
@@ -152,19 +156,21 @@ export default function MainSearchBar({
             className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm focus:border-[color:var(--color-accent)] focus:outline-none sm:w-1/3"
           >
             <option value="">Tất cả thành phố / tỉnh</option>
-            {cities.map((city) => (
-              <option key={city} value={city}>
-                {city}
+            {vnProvinces.map((p) => (
+              <option key={p.code} value={p.name}>
+                {p.name}
               </option>
             ))}
           </select>
           <select
             value={selectedWard}
             onChange={(e) => setWard(e.target.value)}
-            disabled={wardsForSelectedCity.length === 0}
+            disabled={!selectedCity}
             className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm focus:border-[color:var(--color-accent)] focus:outline-none disabled:opacity-50 sm:w-1/3"
           >
-            <option value="">Tất cả phường / xã</option>
+            <option value="">
+              {selectedCity ? "Tất cả phường / xã" : "Chọn tỉnh/thành trước"}
+            </option>
             {wardsForSelectedCity.map((ward) => (
               <option key={ward} value={ward}>
                 {ward}
@@ -177,7 +183,7 @@ export default function MainSearchBar({
             className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm focus:border-[color:var(--color-accent)] focus:outline-none sm:w-1/3"
           >
             <option value="">Tất cả quận / huyện</option>
-            {districts.map((district) => (
+            {vnHcmDistricts.map((district) => (
               <option key={district} value={district}>
                 {district}
               </option>
@@ -198,3 +204,4 @@ export default function MainSearchBar({
     </div>
   );
 }
+
