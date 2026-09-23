@@ -223,6 +223,13 @@ export default async function RoomDetailPage({
                 >
                   Nhắn Zalo
                 </a>
+                <Link
+                  href={`/rooms/${room.id}/export`}
+                  target="_blank"
+                  className="w-full rounded-lg border border-slate-300 px-4 py-2.5 text-center text-sm font-semibold text-slate-700 hover:bg-slate-50"
+                >
+                  Xuất PDF
+                </Link>
               </div>
               <p className="mt-3 text-center text-xs text-slate-400">
                 Liên hệ để hẹn xem phòng trực tiếp
