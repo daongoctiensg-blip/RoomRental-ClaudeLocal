@@ -1,7 +1,7 @@
 "use client";
 
 import { useRouter, useSearchParams, usePathname } from "next/navigation";
-import { useCallback, useMemo, useState, useTransition } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, useTransition } from "react";
 import vnProvinces from "@/data/vn-provinces.json";
 import vnWards from "@/data/vn-wards.json";
 import vnHcmDistricts from "@/data/vn-hcm-districts.json";
@@ -96,15 +96,36 @@ export default function MainSearchBar() {
     [pathname, router, searchParams]
   );
 
-  const submitAddress = () => {
-    pushParams((params) => {
-      if (addressInput.trim()) {
-        params.set("address", addressInput.trim());
-      } else {
-        params.delete("address");
-      }
-    });
-  };
+  const submitAddress = useCallback(
+    (raw?: string) => {
+      const value = (raw ?? addressInput).trim();
+      pushParams((params) => {
+        if (value) {
+          params.set("address", value);
+        } else {
+          params.delete("address");
+        }
+      });
+    },
+    [addressInput, pushParams]
+  );
+
+  // Auto-search as the customer types, matching how the city/ward/district
+  // dropdowns already search on change — the owner asked to drop the "Tìm"
+  // button entirely. Debounced (450ms) so we don't push a new URL/query on
+  // every keystroke; the ref skips the very first render so mounting the
+  // component doesn't immediately re-push the same address already in the URL.
+  const isFirstRender = useRef(true);
+  useEffect(() => {
+    if (isFirstRender.current) {
+      isFirstRender.current = false;
+      return;
+    }
+    const handle = setTimeout(() => {
+      submitAddress();
+    }, 450);
+    return () => clearTimeout(handle);
+  }, [addressInput, submitAddress]);
 
   const setCity = (value: string) => {
     pushParams((params) => {
@@ -170,6 +191,8 @@ export default function MainSearchBar() {
     >
       <form
         onSubmit={(e) => {
+          // Auto-search already fires on every keystroke (debounced); this
+          // just lets Enter apply immediately instead of waiting it out.
           e.preventDefault();
           submitAddress();
         }}
@@ -233,15 +256,8 @@ export default function MainSearchBar() {
         </div>
       </div>
 
-      <div className="flex items-center gap-3 border-t border-slate-200 px-4 py-3 md:border-t-0 md:border-l">
-        <button
-          type="button"
-          onClick={submitAddress}
-          className="shrink-0 rounded-lg bg-[color:var(--color-accent)] px-5 py-2 text-sm font-semibold text-white hover:bg-[color:var(--color-accent-dark)]"
-        >
-          Tìm
-        </button>
-        {hasAnyFilter ? (
+      {hasAnyFilter ? (
+        <div className="flex items-center gap-3 border-t border-slate-200 px-4 py-3 md:border-t-0 md:border-l">
           <button
             type="button"
             onClick={clearAll}
@@ -249,8 +265,8 @@ export default function MainSearchBar() {
           >
             Xoá bộ lọc
           </button>
-        ) : null}
-      </div>
+        </div>
+      ) : null}
     </div>
   );
 }

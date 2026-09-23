@@ -49,10 +49,18 @@ export default function SearchableSelect({
 
   // Keep the displayed text in sync when `value` changes from outside this
   // component (e.g. picking a different city clears the ward value/label).
-  useEffect(() => {
+  // Adjusted during render rather than in a useEffect — React's recommended
+  // pattern for "reset state when a prop changes" (react.dev/learn/
+  // you-might-not-need-an-effect#adjusting-some-state-when-a-prop-changes):
+  // calling setState synchronously inside an effect body causes an extra,
+  // visible render pass (the old query briefly flashes before the effect
+  // catches up); comparing against a bit of state (not a ref — refs can't be
+  // read/written during render) applies the reset in the same pass instead.
+  const [prevValue, setPrevValue] = useState(value);
+  if (prevValue !== value) {
+    setPrevValue(value);
     setQuery(currentLabel);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [value]);
+  }
 
   useEffect(() => {
     function handleClickOutside(e: MouseEvent) {

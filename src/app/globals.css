@@ -26,3 +26,43 @@ body {
 a {
   color: inherit;
 }
+
+/* Dual-range price slider (src/components/PriceRangeSlider.tsx): two native
+ * <input type="range"> elements stacked on top of each other. The track of
+ * each input is transparent/pointer-events:none so clicks pass straight
+ * through to whichever thumb is nearer the click, while each thumb itself
+ * re-enables pointer events so it stays independently draggable. */
+.price-range-thumb {
+  pointer-events: none;
+}
+
+.price-range-thumb::-webkit-slider-thumb {
+  pointer-events: auto;
+  appearance: none;
+  width: 18px;
+  height: 18px;
+  border-radius: 9999px;
+  background: var(--color-accent);
+  border: 2px solid white;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.3);
+  cursor: pointer;
+}
+
+.price-range-thumb::-moz-range-thumb {
+  pointer-events: auto;
+  width: 18px;
+  height: 18px;
+  border-radius: 9999px;
+  background: var(--color-accent);
+  border: 2px solid white;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.3);
+  cursor: pointer;
+}
+
+.price-range-thumb::-webkit-slider-runnable-track {
+  background: transparent;
+}
+
+.price-range-thumb::-moz-range-track {
+  background: transparent;
+}

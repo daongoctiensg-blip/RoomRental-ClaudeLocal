@@ -44,15 +44,34 @@ export default async function HomePage({
   const city = cityRaw === undefined ? DEFAULT_CITY : cityRaw === "all" ? undefined : cityRaw;
   const ward = firstValue(sp.ward);
   const district = firstValue(sp.district);
-  const priceBucketKey = firstValue(sp.priceBucket);
   const sortParam = firstValue(sp.sort);
   const sortBy =
     sortParam === "price_asc" || sortParam === "price_desc" || sortParam === "newest"
       ? sortParam
       : "default";
 
-  const { bucketByKey } = await import("@/lib/priceBuckets");
-  const bucket = priceBucketKey ? bucketByKey(priceBucketKey) : undefined;
+  // Price range: priceMin/priceMax (set by the dual-range slider, or by a
+  // bucket pill — both write these same two params, see FilterBar.tsx) are
+  // the source of truth. `priceBucket=<key>` is kept as a fallback only for
+  // links shared before the slider existed (the slider replaced it, but an
+  // old bookmarked/forwarded link shouldn't silently stop filtering).
+  const priceMinParam = firstValue(sp.priceMin);
+  const priceMaxParam = firstValue(sp.priceMax);
+  const priceBucketKey = firstValue(sp.priceBucket);
+
+  let priceMin: number | undefined;
+  let priceMax: number | undefined;
+  if (priceMinParam !== undefined || priceMaxParam !== undefined) {
+    const parsedMin = priceMinParam !== undefined ? Number(priceMinParam) : undefined;
+    const parsedMax = priceMaxParam !== undefined ? Number(priceMaxParam) : undefined;
+    priceMin = parsedMin !== undefined && Number.isFinite(parsedMin) && parsedMin > 0 ? parsedMin : undefined;
+    priceMax = parsedMax !== undefined && Number.isFinite(parsedMax) ? parsedMax : undefined;
+  } else if (priceBucketKey) {
+    const { bucketByKey } = await import("@/lib/priceBuckets");
+    const bucket = bucketByKey(priceBucketKey);
+    priceMin = bucket?.min;
+    priceMax = bucket?.max ?? undefined;
+  }
 
   const [rooms, admin] = await Promise.all([
     listRooms({
@@ -61,8 +80,8 @@ export default async function HomePage({
       ward,
       district,
       address,
-      priceMin: bucket?.min,
-      priceMax: bucket?.max ?? undefined,
+      priceMin,
+      priceMax,
       sortBy,
     }),
     isAdminSession(),

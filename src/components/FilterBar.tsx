@@ -4,6 +4,7 @@ import { useRouter, useSearchParams, usePathname } from "next/navigation";
 import { useCallback, useTransition } from "react";
 import { ROOM_STATUSES, ROOM_STATUS_LABEL, type RoomStatus } from "@/types";
 import { PRICE_BUCKETS } from "@/lib/priceBuckets";
+import PriceRangeSlider from "@/components/PriceRangeSlider";
 
 /**
  * Secondary refinement filters (status, price bucket). The primary search
@@ -20,7 +21,24 @@ export default function FilterBar() {
   const selectedStatuses = new Set(
     (searchParams.get("status") ?? "available").split(",").filter(Boolean)
   );
-  const selectedBucket = searchParams.get("priceBucket");
+
+  // priceMin/priceMax are the single source of truth for the price range —
+  // both the fixed bucket pills and the dual-range slider below read and
+  // write these same two params, so dragging the slider moves the active
+  // pill highlight and clicking a pill moves the slider handles. `priceMax`
+  // absent means "no upper bound" (the slider's right handle sits at its
+  // max, showing "X+"). A legacy `priceBucket=<key>` param (from links
+  // shared before the slider existed) is still honored for display here —
+  // see page.tsx, which falls back to it server-side too.
+  const legacyBucket = searchParams.get("priceBucket")
+    ? PRICE_BUCKETS.find((b) => b.key === searchParams.get("priceBucket"))
+    : undefined;
+  const selectedMin = searchParams.has("priceMin")
+    ? Number(searchParams.get("priceMin"))
+    : (legacyBucket?.min ?? 0);
+  const selectedMax = searchParams.has("priceMax")
+    ? Number(searchParams.get("priceMax"))
+    : (legacyBucket?.max ?? null);
 
   const pushParams = useCallback(
     (mutate: (params: URLSearchParams) => void) => {
@@ -51,14 +69,34 @@ export default function FilterBar() {
     });
   };
 
-  const toggleBucket = (key: string) => {
-    pushParams((params) => {
-      if (params.get("priceBucket") === key) {
+  const applyRange = useCallback(
+    (nextMin: number, nextMax: number | null) => {
+      pushParams((params) => {
+        if (nextMin > 0) {
+          params.set("priceMin", String(nextMin));
+        } else {
+          params.delete("priceMin");
+        }
+        if (nextMax !== null) {
+          params.set("priceMax", String(nextMax));
+        } else {
+          params.delete("priceMax");
+        }
+        // Superseded by priceMin/priceMax now that the slider exists — drop
+        // it so a stale bucket key never overrides the values just set.
         params.delete("priceBucket");
-      } else {
-        params.set("priceBucket", key);
-      }
-    });
+      });
+    },
+    [pushParams]
+  );
+
+  const toggleBucket = (bucketMin: number, bucketMax: number | null) => {
+    const isActive = selectedMin === bucketMin && selectedMax === bucketMax;
+    if (isActive) {
+      applyRange(0, null);
+    } else {
+      applyRange(bucketMin, bucketMax);
+    }
   };
 
   return (
@@ -98,12 +136,12 @@ export default function FilterBar() {
         </h3>
         <div className="flex flex-wrap gap-2">
           {PRICE_BUCKETS.map((bucket) => {
-            const active = selectedBucket === bucket.key;
+            const active = selectedMin === bucket.min && selectedMax === bucket.max;
             return (
               <button
                 key={bucket.key}
                 type="button"
-                onClick={() => toggleBucket(bucket.key)}
+                onClick={() => toggleBucket(bucket.min, bucket.max)}
                 className={`rounded-full border px-3 py-1.5 text-sm transition ${
                   active
                     ? "border-[color:var(--color-accent)] bg-[color:var(--color-accent-light)] text-[color:var(--color-accent-dark)]"
@@ -115,6 +153,7 @@ export default function FilterBar() {
             );
           })}
         </div>
+        <PriceRangeSlider min={selectedMin} max={selectedMax} onChange={applyRange} />
       </div>
     </div>
   );
