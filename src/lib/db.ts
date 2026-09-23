@@ -687,12 +687,19 @@ export async function listRooms(
     // keeps each table's columns in its own `{r: {...}, p: {...}}` bucket,
     // so there's no collision regardless of how many columns happen to
     // share a name between the two tables.
+    const orderBy =
+      filter?.sortBy === "price_asc"
+        ? "r.price_monthly ASC"
+        : filter?.sortBy === "price_desc"
+          ? "r.price_monthly DESC"
+          : "r.created_at DESC"; // "default" and "newest" both read as newest-first at the SQL level
+
     [rows] = await conn.query(
       {
         sql: `SELECT r.*, p.*
        FROM rooms r JOIN properties p ON p.id = r.property_id
        WHERE ${clauses.join(" AND ")}
-       ORDER BY r.created_at DESC`,
+       ORDER BY ${orderBy}`,
         nestTables: true,
       },
       values

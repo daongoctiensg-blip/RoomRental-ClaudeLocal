@@ -207,7 +207,17 @@ export interface RoomFilter {
   status?: RoomStatus[];
   priceMin?: number;
   priceMax?: number;
+  /** Result order — ignored when `address` is set (that always sorts
+   * nearest-first / keyword-relevance instead, see listRooms). */
+  sortBy?: "default" | "price_asc" | "price_desc" | "newest";
 }
+
+export const ROOM_SORT_OPTIONS = [
+  { value: "default", label: "Mặc định" },
+  { value: "price_asc", label: "Giá thấp nhất" },
+  { value: "price_desc", label: "Giá cao nhất" },
+  { value: "newest", label: "Mới nhất" },
+] as const;
 
 /** A Room enriched with its parent Property — what the admin UI renders. */
 export interface RoomWithProperty extends Room {

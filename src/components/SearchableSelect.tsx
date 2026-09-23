@@ -21,6 +21,7 @@ export default function SearchableSelect({
   placeholder,
   disabled,
   className,
+  wrapperClassName,
   maxResults = 200,
 }: {
   value: string;
@@ -28,7 +29,14 @@ export default function SearchableSelect({
   options: SearchableOption[];
   placeholder?: string;
   disabled?: boolean;
+  /** Visual styling for the text input itself (border, padding, focus ring). */
   className?: string;
+  /** Layout/sizing for the outer wrapper (e.g. `sm:w-1/3`) — kept separate
+   * from `className` because the wrapper, not the input, is the flex child
+   * that actually needs the width/basis classes. Putting width utilities
+   * only on the input left the unsized wrapper free to collapse to content
+   * size, squeezing the whole search bar down to a sliver. */
+  wrapperClassName?: string;
   /** Cap how many matches render at once — with 3,320 wards, rendering
    * every match on an empty/broad query would be slow and pointless since
    * the user is about to narrow it down by typing anyway. */
@@ -66,7 +74,7 @@ export default function SearchableSelect({
   ).slice(0, maxResults);
 
   return (
-    <div ref={containerRef} className="relative">
+    <div ref={containerRef} className={`relative w-full ${wrapperClassName ?? ""}`}>
       <input
         type="text"
         value={query}

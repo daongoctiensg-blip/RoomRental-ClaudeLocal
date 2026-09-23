@@ -4,6 +4,7 @@ import { isAdminSession } from "@/lib/apiAuth";
 import RoomCard from "@/components/RoomCard";
 import FilterBar from "@/components/FilterBar";
 import MainSearchBar from "@/components/MainSearchBar";
+import SortControl from "@/components/SortControl";
 import LogoutButton from "@/components/LogoutButton";
 import type { RoomStatus } from "@/types";
 import { ROOM_STATUSES } from "@/types";
@@ -44,6 +45,11 @@ export default async function HomePage({
   const ward = firstValue(sp.ward);
   const district = firstValue(sp.district);
   const priceBucketKey = firstValue(sp.priceBucket);
+  const sortParam = firstValue(sp.sort);
+  const sortBy =
+    sortParam === "price_asc" || sortParam === "price_desc" || sortParam === "newest"
+      ? sortParam
+      : "default";
 
   const { bucketByKey } = await import("@/lib/priceBuckets");
   const bucket = priceBucketKey ? bucketByKey(priceBucketKey) : undefined;
@@ -57,6 +63,7 @@ export default async function HomePage({
       address,
       priceMin: bucket?.min,
       priceMax: bucket?.max ?? undefined,
+      sortBy,
     }),
     isAdminSession(),
   ]);
@@ -94,15 +101,6 @@ export default async function HomePage({
 
       <main className="mx-auto w-full max-w-[1600px] flex-1 px-4 py-6 sm:px-6 lg:px-10">
         <div className="mb-6">
-          <h1 className="text-2xl font-bold text-slate-900">
-            Tìm thấy {rooms.length} phòng
-          </h1>
-          <p className="text-sm text-slate-500">
-            Xem danh sách phòng còn trống, lọc theo địa chỉ, trạng thái và giá thuê.
-          </p>
-        </div>
-
-        <div className="mb-6">
           <MainSearchBar />
         </div>
 
@@ -112,6 +110,18 @@ export default async function HomePage({
           </aside>
 
           <div className="flex flex-col gap-4">
+            <div className="flex flex-wrap items-end justify-between gap-3 border-b border-slate-200 pb-3">
+              <div>
+                <h1 className="text-2xl font-bold text-slate-900">
+                  Tìm thấy {rooms.length} phòng
+                </h1>
+                <p className="text-sm text-slate-500">
+                  Xem danh sách phòng còn trống, lọc theo địa chỉ, trạng thái và giá thuê.
+                </p>
+              </div>
+              <SortControl />
+            </div>
+
             {rooms.length === 0 ? (
               <div className="rounded-xl bg-white p-8 text-center text-slate-500 shadow-sm ring-1 ring-black/5">
                 Không tìm thấy phòng phù hợp với bộ lọc hiện tại.

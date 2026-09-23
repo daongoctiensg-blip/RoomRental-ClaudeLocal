@@ -52,6 +52,11 @@ export async function GET(request: NextRequest) {
     if (priceMax) filter.priceMax = Number(priceMax);
   }
 
+  const sortBy = searchParams.get("sort");
+  if (sortBy === "price_asc" || sortBy === "price_desc" || sortBy === "newest") {
+    filter.sortBy = sortBy;
+  }
+
   const rooms = await listRooms(filter);
   const admin = isAdminRequest(request);
   return NextResponse.json({ rooms: admin ? rooms : rooms.map(toPublicRoom) });

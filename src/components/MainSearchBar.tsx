@@ -96,8 +96,7 @@ export default function MainSearchBar() {
     [pathname, router, searchParams]
   );
 
-  const submitAddress = (e: React.FormEvent) => {
-    e.preventDefault();
+  const submitAddress = () => {
     pushParams((params) => {
       if (addressInput.trim()) {
         params.set("address", addressInput.trim());
@@ -165,56 +164,88 @@ export default function MainSearchBar() {
 
   return (
     <div
-      className={`rounded-xl bg-white p-4 shadow-sm ring-1 ring-black/5 ${
+      className={`flex flex-col overflow-hidden rounded-xl bg-white shadow-md ring-1 ring-black/5 md:flex-row md:items-stretch ${
         isPending ? "opacity-70" : ""
       }`}
     >
-      <div className="flex flex-col gap-3 md:flex-row md:items-stretch">
-        <form onSubmit={submitAddress} className="flex flex-1 gap-2">
-          <input
-            value={addressInput}
-            onChange={(e) => setAddressInput(e.target.value)}
-            placeholder="Tìm theo địa chỉ, khu vực…"
-            className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm focus:border-[color:var(--color-accent)] focus:outline-none"
-          />
-          <button
-            type="submit"
-            className="shrink-0 rounded-lg bg-[color:var(--color-accent)] px-4 py-2 text-sm font-medium text-white hover:bg-[color:var(--color-accent-dark)]"
-          >
-            Tìm
-          </button>
-        </form>
+      <form
+        onSubmit={(e) => {
+          e.preventDefault();
+          submitAddress();
+        }}
+        className="flex flex-1 items-center gap-2 border-b border-slate-200 px-4 py-3 md:border-b-0 md:border-r"
+      >
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" className="h-[18px] w-[18px] shrink-0 text-[color:var(--color-accent)]">
+          <circle cx="11" cy="11" r="7" />
+          <line x1="16" y1="16" x2="21" y2="21" />
+        </svg>
+        <input
+          value={addressInput}
+          onChange={(e) => setAddressInput(e.target.value)}
+          placeholder="Tìm theo địa chỉ, khu vực…"
+          className="w-full min-w-0 border-0 bg-transparent p-0 text-base font-semibold text-slate-900 placeholder:font-medium placeholder:text-slate-400 focus:outline-none"
+        />
+      </form>
 
-        <div className="flex flex-col gap-2 sm:flex-row md:w-[620px] md:shrink-0">
+      <div className="flex flex-col md:flex-row">
+        <div className="flex items-center gap-2 border-b border-slate-200 px-4 py-3 md:w-[260px] md:border-b-0 md:border-r">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" className="h-[18px] w-[18px] shrink-0 text-[color:var(--color-accent)]">
+            <path d="M20 10c0 6-8 12-8 12s-8-6-8-12a8 8 0 1 1 16 0Z" />
+            <circle cx="12" cy="10" r="3" />
+          </svg>
           <SearchableSelect
             value={selectedCity}
             onChange={setCity}
             options={cityOptions}
-            placeholder="Gõ để tìm tỉnh/thành…"
-            className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm focus:border-[color:var(--color-accent)] focus:outline-none sm:w-1/3"
+            placeholder="Tỉnh/thành…"
+            wrapperClassName="w-full"
+            className="w-full border-0 bg-transparent p-0 text-base font-semibold text-slate-900 placeholder:font-medium placeholder:text-slate-400 focus:outline-none"
           />
+        </div>
+        <div className="flex items-center gap-2 border-b border-slate-200 px-4 py-3 md:w-[220px] md:border-b-0 md:border-r">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" className="h-[18px] w-[18px] shrink-0 text-[color:var(--color-accent)]">
+            <path d="M20 10c0 6-8 12-8 12s-8-6-8-12a8 8 0 1 1 16 0Z" />
+            <circle cx="12" cy="10" r="3" />
+          </svg>
           <SearchableSelect
             value={selectedWard}
             onChange={setWard}
             options={wardOptions}
             disabled={!selectedCity}
-            placeholder={selectedCity ? "Gõ để tìm phường/xã…" : "Chọn tỉnh/thành trước"}
-            className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm focus:border-[color:var(--color-accent)] focus:outline-none disabled:opacity-50 sm:w-1/3"
+            placeholder={selectedCity ? "Phường/xã…" : "Chọn tỉnh trước"}
+            wrapperClassName="w-full"
+            className="w-full border-0 bg-transparent p-0 text-base font-semibold text-slate-900 placeholder:font-medium placeholder:text-slate-400 focus:outline-none disabled:opacity-50"
           />
+        </div>
+        <div className="flex items-center gap-2 border-b border-slate-200 px-4 py-3 md:w-[210px] md:border-b-0">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" className="h-[18px] w-[18px] shrink-0 text-[color:var(--color-accent)]">
+            <path d="M20 10c0 6-8 12-8 12s-8-6-8-12a8 8 0 1 1 16 0Z" />
+            <circle cx="12" cy="10" r="3" />
+          </svg>
           <SearchableSelect
             value={selectedDistrict}
             onChange={setDistrict}
             options={districtOptions}
-            placeholder="Gõ để tìm quận/huyện…"
-            className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm focus:border-[color:var(--color-accent)] focus:outline-none sm:w-1/3"
+            placeholder="Quận/huyện…"
+            wrapperClassName="w-full"
+            className="w-full border-0 bg-transparent p-0 text-base font-semibold text-slate-900 placeholder:font-medium placeholder:text-slate-400 focus:outline-none"
           />
         </div>
+      </div>
 
+      <div className="flex items-center gap-3 border-t border-slate-200 px-4 py-3 md:border-t-0 md:border-l">
+        <button
+          type="button"
+          onClick={submitAddress}
+          className="shrink-0 rounded-lg bg-[color:var(--color-accent)] px-5 py-2 text-sm font-semibold text-white hover:bg-[color:var(--color-accent-dark)]"
+        >
+          Tìm
+        </button>
         {hasAnyFilter ? (
           <button
             type="button"
             onClick={clearAll}
-            className="shrink-0 self-center text-xs font-medium text-slate-500 underline-offset-2 hover:underline md:self-stretch md:px-1"
+            className="shrink-0 text-xs font-medium text-slate-500 underline-offset-2 hover:underline"
           >
             Xoá bộ lọc
           </button>
