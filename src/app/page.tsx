@@ -1,3 +1,4 @@
+import Link from "next/link";
 import { listRooms } from "@/lib/db";
 import { isAdminSession } from "@/lib/apiAuth";
 import RoomCard from "@/components/RoomCard";
@@ -72,21 +73,21 @@ export default async function HomePage({
               <span className="rounded-full bg-amber-100 px-2.5 py-1 text-xs font-medium text-amber-800">
                 Đang xem với quyền Admin
               </span>
-              <a
+              <Link
                 href="/admin"
                 className="text-xs font-medium text-slate-400 hover:text-slate-600"
               >
                 Vào trang quản trị
-              </a>
+              </Link>
               <LogoutButton redirectTo="/" className="text-xs font-medium text-slate-400 hover:text-slate-600" />
             </div>
           ) : (
-            <a
+            <Link
               href="/admin"
               className="text-xs font-medium text-slate-400 hover:text-slate-600"
             >
               Quản trị
-            </a>
+            </Link>
           )}
         </div>
       </header>
