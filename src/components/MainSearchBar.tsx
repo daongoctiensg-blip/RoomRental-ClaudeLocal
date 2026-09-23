@@ -5,6 +5,7 @@ import { useCallback, useMemo, useState, useTransition } from "react";
 import vnProvinces from "@/data/vn-provinces.json";
 import vnWards from "@/data/vn-wards.json";
 import vnHcmDistricts from "@/data/vn-hcm-districts.json";
+import SearchableSelect from "@/components/SearchableSelect";
 
 /**
  * The primary, always-visible search controls: free-text address search plus
@@ -61,6 +62,28 @@ export default function MainSearchBar() {
     if (!code) return [];
     return vnWards.filter((w) => w.pc === code).map((w) => w.w);
   }, [provinceCodeByName, selectedCity]);
+
+  const cityOptions = useMemo(
+    () => [
+      { value: "", label: "Tất cả thành phố / tỉnh" },
+      ...vnProvinces.map((p) => ({ value: p.name, label: p.name })),
+    ],
+    []
+  );
+  const wardOptions = useMemo(
+    () => [
+      { value: "", label: selectedCity ? "Tất cả phường / xã" : "Chọn tỉnh/thành trước" },
+      ...wardsForSelectedCity.map((w) => ({ value: w, label: w })),
+    ],
+    [selectedCity, wardsForSelectedCity]
+  );
+  const districtOptions = useMemo(
+    () => [
+      { value: "", label: "Tất cả quận / huyện" },
+      ...vnHcmDistricts.map((d) => ({ value: d, label: d })),
+    ],
+    []
+  );
 
   const pushParams = useCallback(
     (mutate: (params: URLSearchParams) => void) => {
@@ -163,45 +186,28 @@ export default function MainSearchBar() {
         </form>
 
         <div className="flex flex-col gap-2 sm:flex-row md:w-[620px] md:shrink-0">
-          <select
+          <SearchableSelect
             value={selectedCity}
-            onChange={(e) => setCity(e.target.value)}
+            onChange={setCity}
+            options={cityOptions}
+            placeholder="Gõ để tìm tỉnh/thành…"
             className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm focus:border-[color:var(--color-accent)] focus:outline-none sm:w-1/3"
-          >
-            <option value="">Tất cả thành phố / tỉnh</option>
-            {vnProvinces.map((p) => (
-              <option key={p.code} value={p.name}>
-                {p.name}
-              </option>
-            ))}
-          </select>
-          <select
+          />
+          <SearchableSelect
             value={selectedWard}
-            onChange={(e) => setWard(e.target.value)}
+            onChange={setWard}
+            options={wardOptions}
             disabled={!selectedCity}
+            placeholder={selectedCity ? "Gõ để tìm phường/xã…" : "Chọn tỉnh/thành trước"}
             className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm focus:border-[color:var(--color-accent)] focus:outline-none disabled:opacity-50 sm:w-1/3"
-          >
-            <option value="">
-              {selectedCity ? "Tất cả phường / xã" : "Chọn tỉnh/thành trước"}
-            </option>
-            {wardsForSelectedCity.map((ward) => (
-              <option key={ward} value={ward}>
-                {ward}
-              </option>
-            ))}
-          </select>
-          <select
+          />
+          <SearchableSelect
             value={selectedDistrict}
-            onChange={(e) => setDistrict(e.target.value)}
+            onChange={setDistrict}
+            options={districtOptions}
+            placeholder="Gõ để tìm quận/huyện…"
             className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm focus:border-[color:var(--color-accent)] focus:outline-none sm:w-1/3"
-          >
-            <option value="">Tất cả quận / huyện</option>
-            {vnHcmDistricts.map((district) => (
-              <option key={district} value={district}>
-                {district}
-              </option>
-            ))}
-          </select>
+          />
         </div>
 
         {hasAnyFilter ? (

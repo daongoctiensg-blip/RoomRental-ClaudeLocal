@@ -1,11 +1,12 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { apiUrl } from "@/lib/basePath";
 import vnProvinces from "@/data/vn-provinces.json";
 import vnWards from "@/data/vn-wards.json";
 import vnHcmDistricts from "@/data/vn-hcm-districts.json";
+import SearchableSelect from "@/components/SearchableSelect";
 import type { CommissionTier, Property, UtilityFeeVersion } from "@/types";
 
 type FormState = {
@@ -125,6 +126,18 @@ export default function PropertyForm({ property }: { property?: Property }) {
     if (!code) return [];
     return vnWards.filter((w) => w.pc === code).map((w) => w.w);
   }, [provinceCodeByName, form.city]);
+  const cityOptions = useMemo(
+    () => vnProvinces.map((p) => ({ value: p.name, label: p.name })),
+    []
+  );
+  const wardOptions = useMemo(
+    () => wardsForCity.map((w) => ({ value: w, label: w })),
+    [wardsForCity]
+  );
+  const districtOptions = useMemo(
+    () => vnHcmDistricts.map((d) => ({ value: d, label: d })),
+    []
+  );
   const [commission, setCommission] = useState<CommissionTier[]>(
     property?.commissionPolicy ?? [
       { contractDurationMonths: 6, commissionPercent: 50 },
@@ -133,9 +146,40 @@ export default function PropertyForm({ property }: { property?: Property }) {
   );
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [uploading, setUploading] = useState(false);
+  const [uploadError, setUploadError] = useState<string | null>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
 
   const update = <K extends keyof FormState>(key: K, value: FormState[K]) =>
     setForm((f) => ({ ...f, [key]: value }));
+
+  const onPickFiles = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const files = Array.from(e.target.files ?? []);
+    e.target.value = ""; // cho phép chọn lại đúng file đó lần sau
+    if (!files.length) return;
+
+    setUploading(true);
+    setUploadError(null);
+    const uploadedUrls: string[] = [];
+    for (const file of files) {
+      const body = new FormData();
+      body.append("file", file);
+      const res = await fetch(apiUrl("/api/upload"), { method: "POST", body });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        setUploadError(data.error ?? `Tải lên "${file.name}" thất bại`);
+        continue; // vẫn thử các file còn lại, không dừng cả loạt vì 1 file lỗi
+      }
+      uploadedUrls.push(data.url as string);
+    }
+    setUploading(false);
+    if (uploadedUrls.length) {
+      update(
+        "images",
+        [form.images.trim(), ...uploadedUrls].filter(Boolean).join("\n")
+      );
+    }
+  };
 
   const onSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -252,55 +296,35 @@ export default function PropertyForm({ property }: { property?: Property }) {
           />
         </Field>
         <Field label="Thành phố / Tỉnh (dùng cho bộ lọc dropdown trên trang khách)">
-          <select
-            required
+          <SearchableSelect
             value={form.city}
-            onChange={(e) => {
-              update("city", e.target.value);
+            onChange={(v) => {
+              update("city", v);
               update("ward", ""); // đổi tỉnh thì phường/xã cũ không còn hợp lệ nữa
             }}
+            options={cityOptions}
+            placeholder="Gõ để tìm thành phố / tỉnh…"
             className={inputClass}
-          >
-            <option value="">— Chọn thành phố / tỉnh —</option>
-            {vnProvinces.map((p) => (
-              <option key={p.code} value={p.name}>
-                {p.name}
-              </option>
-            ))}
-          </select>
+          />
         </Field>
         <Field label="Phường / Xã (dùng cho bộ lọc dropdown trên trang khách)">
-          <select
-            required
+          <SearchableSelect
             value={form.ward}
-            onChange={(e) => update("ward", e.target.value)}
+            onChange={(v) => update("ward", v)}
+            options={wardOptions}
             disabled={!form.city}
+            placeholder={form.city ? "Gõ để tìm phường / xã…" : "Chọn thành phố/tỉnh trước"}
             className={inputClass}
-          >
-            <option value="">
-              {form.city ? "— Chọn phường / xã —" : "Chọn thành phố/tỉnh trước"}
-            </option>
-            {wardsForCity.map((w) => (
-              <option key={w} value={w}>
-                {w}
-              </option>
-            ))}
-          </select>
+          />
         </Field>
         <Field label="Quận / Huyện (theo địa chỉ cũ — dùng cho bộ lọc dropdown trên trang khách)">
-          <select
-            required
+          <SearchableSelect
             value={form.district}
-            onChange={(e) => update("district", e.target.value)}
+            onChange={(v) => update("district", v)}
+            options={districtOptions}
+            placeholder="Gõ để tìm quận / huyện…"
             className={inputClass}
-          >
-            <option value="">— Chọn quận / huyện —</option>
-            {vnHcmDistricts.map((d) => (
-              <option key={d} value={d}>
-                {d}
-              </option>
-            ))}
-          </select>
+          />
         </Field>
         <Field label="Số điện thoại liên hệ (công khai — khách gọi/Zalo số này)">
           <input
@@ -360,6 +384,27 @@ export default function PropertyForm({ property }: { property?: Property }) {
             rows={3}
             className={inputClass}
           />
+          <div className="mt-1 flex items-center gap-2">
+            <input
+              ref={fileInputRef}
+              type="file"
+              accept="image/jpeg,image/png,image/webp,image/gif"
+              multiple
+              className="hidden"
+              onChange={onPickFiles}
+            />
+            <button
+              type="button"
+              onClick={() => fileInputRef.current?.click()}
+              disabled={uploading}
+              className="rounded-lg border border-slate-300 px-3 py-1.5 text-xs font-medium text-slate-700 hover:border-[color:var(--color-accent)] disabled:opacity-60"
+            >
+              {uploading ? "Đang tải lên…" : "📷 Tải ảnh lên từ máy"}
+            </button>
+            {uploadError ? (
+              <span className="text-xs text-red-600">{uploadError}</span>
+            ) : null}
+          </div>
         </Field>
       </Section>
 
