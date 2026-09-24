@@ -5,7 +5,7 @@ import type { RoomFilter, RoomStatus } from "@/types";
 import { ROOM_STATUSES } from "@/types";
 import { bucketByKey } from "@/lib/priceBuckets";
 
-// GET /api/rooms?status=available,deposited&priceBucket=3-4&address=phu+thuan
+// GET /api/rooms?status=available,deposited&priceBucket=4-6&address=phu+thuan
 // Public endpoint — an unauthenticated caller only ever gets the customer-safe
 // shape (toPublicRoom): no commission %, no landlord contact, no "lì xì".
 // An admin session gets the full internal shape.
@@ -50,6 +50,11 @@ export async function GET(request: NextRequest) {
     const priceMax = searchParams.get("priceMax");
     if (priceMin) filter.priceMin = Number(priceMin);
     if (priceMax) filter.priceMax = Number(priceMax);
+  }
+
+  const occupancyParam = searchParams.get("occupancy");
+  if (occupancyParam === "1" || occupancyParam === "2" || occupancyParam === "3") {
+    filter.occupancy = Number(occupancyParam) as 1 | 2 | 3;
   }
 
   const sortBy = searchParams.get("sort");

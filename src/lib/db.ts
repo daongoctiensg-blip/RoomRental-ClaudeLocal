@@ -110,6 +110,7 @@ function rowToProperty(row: any): Property {
     }),
     commissionPolicy: parseJson(row.commission_policy, []),
     saleBonusPolicy: row.sale_bonus_policy ? parseJson(row.sale_bonus_policy, undefined) : undefined,
+    customerPromotion: row.customer_promotion ?? undefined,
     images: parseJson(row.images, []),
     isActive: !!row.is_active,
     createdAt: row.created_at,
@@ -127,6 +128,8 @@ function rowToRoom(row: any): Room {
     areaSqm: Number(row.area_sqm),
     hasBalcony: !!row.has_balcony,
     priceMonthly: Number(row.price_monthly),
+    maxOccupancy: row.max_occupancy === null || row.max_occupancy === undefined ? undefined : Number(row.max_occupancy),
+    viewCount: Number(row.view_count ?? 0),
     status: row.status,
     statusUpdatedAt: row.status_updated_at,
     currentDeposit: row.current_deposit ? parseJson(row.current_deposit, undefined) : undefined,
@@ -341,8 +344,8 @@ export async function createProperty(
        landlord_name, landlord_contact_phone, landlord_zalo,
        amenities_shared, transport_notes, utility_fee_versions,
        deposit_policy, deposit_cancellation_policy, commission_policy,
-       sale_bonus_policy, images, is_active, created_at, updated_at)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+       sale_bonus_policy, customer_promotion, images, is_active, created_at, updated_at)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
     [
       property.id,
       property.name,
@@ -364,6 +367,7 @@ export async function createProperty(
       JSON.stringify(property.depositCancellationPolicy),
       JSON.stringify(property.commissionPolicy),
       property.saleBonusPolicy ? JSON.stringify(property.saleBonusPolicy) : null,
+      property.customerPromotion ?? null,
       JSON.stringify(property.images),
       property.isActive ? 1 : 0,
       property.createdAt,
@@ -387,6 +391,7 @@ const PROPERTY_COLUMN_MAP: Record<string, string> = {
   landlordContactPhone: "landlord_contact_phone",
   landlordZalo: "landlord_zalo",
   isActive: "is_active",
+  customerPromotion: "customer_promotion",
 };
 const PROPERTY_JSON_COLUMN_MAP: Record<string, string> = {
   amenitiesShared: "amenities_shared",
@@ -660,6 +665,16 @@ export async function listRooms(
       clauses.push("r.price_monthly < ?");
       values.push(filter.priceMax);
     }
+    // "Số người ở" filter — 1/2 are exact matches, 3 means "3 or more"
+    // (matches the 3-4 người bucket in the UI). Rooms with no maxOccupancy
+    // set are excluded once this filter is active, since we can't tell
+    // whether they'd match.
+    if (filter?.occupancy === 1 || filter?.occupancy === 2) {
+      clauses.push("r.max_occupancy = ?");
+      values.push(filter.occupancy);
+    } else if (filter?.occupancy === 3) {
+      clauses.push("r.max_occupancy >= 3");
+    }
     // Dropdown filters (exact match, no geocoding — the customer explicitly
     // picked a city/ward/district, so just list everything in it).
     // Independent from the free-text `address` search box below, which is
@@ -793,11 +808,26 @@ export async function getRoom(id: string): Promise<RoomWithProperty | undefined>
   }
 }
 
+/** Atomically increments a room's real view counter. Called once per open of
+ * the public/admin room detail page (src/app/rooms/[id]/page.tsx), for every
+ * viewer type — customer, sale, and admin all count. Deliberately separate
+ * from getRoom() itself, since getRoom() is also called from non-detail-page
+ * contexts (admin edit form load, API lookups, contract flows) where a view
+ * should NOT be counted. Never touches other columns/updated_at, since a
+ * view is not a content edit. */
+export async function recordRoomView(id: string): Promise<void> {
+  const pool = getPool();
+  await pool.query("UPDATE rooms SET view_count = view_count + 1 WHERE id = ?", [id]);
+}
+
 export async function createRoom(input: RoomInput): Promise<Room> {
   const pool = getPool();
   const room: Room = {
     ...input,
     id: `room-${randomUUID()}`,
+    // viewCount is a real counter, never caller-supplied — always starts at
+    // 0 for a brand-new room regardless of what's in `input`.
+    viewCount: 0,
     statusUpdatedAt: nowIso(),
     createdAt: nowIso(),
     updatedAt: nowIso(),
@@ -805,9 +835,10 @@ export async function createRoom(input: RoomInput): Promise<Room> {
   await pool.query(
     `INSERT INTO rooms
       (id, property_id, code, floor, area_sqm, has_balcony, price_monthly,
+       max_occupancy, view_count,
        status, status_updated_at, current_deposit, sub_units,
        amenities_override, images, description, is_active, created_at, updated_at)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
     [
       room.id,
       room.propertyId,
@@ -816,6 +847,8 @@ export async function createRoom(input: RoomInput): Promise<Room> {
       room.areaSqm,
       room.hasBalcony ? 1 : 0,
       room.priceMonthly,
+      room.maxOccupancy ?? null,
+      room.viewCount,
       room.status,
       room.statusUpdatedAt,
       room.currentDeposit ? JSON.stringify(room.currentDeposit) : null,
@@ -838,6 +871,7 @@ const ROOM_COLUMN_MAP: Record<string, string> = {
   areaSqm: "area_sqm",
   hasBalcony: "has_balcony",
   priceMonthly: "price_monthly",
+  maxOccupancy: "max_occupancy",
   description: "description",
   isActive: "is_active",
 };

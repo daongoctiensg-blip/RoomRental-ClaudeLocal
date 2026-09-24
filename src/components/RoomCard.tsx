@@ -59,6 +59,11 @@ export default function RoomCard({
               {room.subUnits.length} phòng ngủ riêng
             </span>
           ) : null}
+          {room.viewCount > 0 ? (
+            <span className="rounded-md bg-slate-100 px-2.5 py-1 text-slate-500">
+              👁 {room.viewCount} lượt xem
+            </span>
+          ) : null}
         </div>
 
         <div className="mt-auto flex flex-wrap items-end justify-between gap-3 border-t border-slate-100 pt-3">

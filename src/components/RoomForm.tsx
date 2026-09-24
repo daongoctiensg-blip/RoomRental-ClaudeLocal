@@ -30,6 +30,9 @@ export default function RoomForm({
   const [areaSqm, setAreaSqm] = useState(room?.areaSqm ?? 0);
   const [hasBalcony, setHasBalcony] = useState(room?.hasBalcony ?? false);
   const [priceMonthly, setPriceMonthly] = useState(room?.priceMonthly ?? 0);
+  const [maxOccupancy, setMaxOccupancy] = useState<number | "">(
+    room?.maxOccupancy ?? ""
+  );
   const [description, setDescription] = useState(room?.description ?? "");
   const [images, setImages] = useState((room?.images ?? []).join("\n"));
   const [amenitiesOverride, setAmenitiesOverride] = useState(
@@ -81,6 +84,7 @@ export default function RoomForm({
       areaSqm: Number(areaSqm),
       hasBalcony,
       priceMonthly: Number(priceMonthly),
+      maxOccupancy: maxOccupancy === "" ? undefined : Number(maxOccupancy),
       status: room?.status ?? "available",
       description: description || undefined,
       images: splitLines(images),
@@ -172,6 +176,25 @@ export default function RoomForm({
               onChange={(e) => setPriceMonthly(Number(e.target.value))}
               className={inputClass}
             />
+          </label>
+
+          <label className="flex flex-col gap-1">
+            <span className="text-sm font-medium text-slate-700">
+              Sức chứa tối đa (số người)
+            </span>
+            <input
+              type="number"
+              min={1}
+              value={maxOccupancy}
+              onChange={(e) =>
+                setMaxOccupancy(e.target.value === "" ? "" : Number(e.target.value))
+              }
+              className={inputClass}
+              placeholder="Để trống nếu không áp dụng"
+            />
+            <span className="text-xs text-slate-400">
+              Dùng cho bộ lọc &quot;Số người ở&quot; bên trang khách xem.
+            </span>
           </label>
 
           {room ? (

@@ -2,6 +2,7 @@ import Link from "next/link";
 import { listProperties, listRooms } from "@/lib/db";
 import RoomActions from "@/components/RoomActions";
 import StatusBadge from "@/components/StatusBadge";
+import StatusQuickSwitch from "@/components/StatusQuickSwitch";
 import { formatVnd } from "@/lib/format";
 
 export const dynamic = "force-dynamic";
@@ -22,8 +23,34 @@ export default async function AdminDashboardPage() {
     roomsByProperty.set(room.propertyId, list);
   }
 
+  // Admin KPI dashboard — round 10, §15. Read-only, derived entirely from
+  // the rooms already fetched above (includeInactiveProperties: true, so
+  // this also reflects rooms on a currently-unlisted property) — no new
+  // schema, no new query.
+  const activeRooms = rooms.filter((r) => r.isActive);
+  const totalRooms = activeRooms.length;
+  const availableCount = activeRooms.filter((r) => r.status === "available").length;
+  const depositedCount = activeRooms.filter((r) => r.status === "deposited").length;
+  const soldCount = activeRooms.filter((r) => r.status === "sold").length;
+  const renovatingCount = activeRooms.filter((r) => r.status === "renovating").length;
+  // "Occupied" = actually generating revenue right now (đã cọc + đã cho
+  // thuê); a room under sửa chữa is neither occupied nor available to book,
+  // so it's excluded from both the numerator and (implicitly, since it's
+  // still counted in totalRooms) the denominator's "free" side.
+  const occupancyRate =
+    totalRooms > 0 ? Math.round(((depositedCount + soldCount) / totalRooms) * 100) : 0;
+
   return (
     <div className="flex flex-col gap-8">
+      <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-6">
+        <KpiCard label="Tổng số phòng" value={String(totalRooms)} />
+        <KpiCard label="Còn trống" value={String(availableCount)} accent="text-[color:var(--color-available)]" />
+        <KpiCard label="Đã cọc" value={String(depositedCount)} accent="text-[color:var(--color-deposited)]" />
+        <KpiCard label="Đã cho thuê" value={String(soldCount)} accent="text-[color:var(--color-sold)]" />
+        <KpiCard label="Đang sửa chữa" value={String(renovatingCount)} accent="text-[color:var(--color-renovating)]" />
+        <KpiCard label="Tỉ lệ lấp đầy" value={`${occupancyRate}%`} accent="text-[color:var(--color-accent-dark)]" />
+      </div>
+
       <div className="flex justify-end">
         <Link
           href="/admin/commissions"
@@ -83,7 +110,10 @@ export default async function AdminDashboardPage() {
                       {formatVnd(room.priceMonthly)}
                     </td>
                     <td className="py-2 align-top">
-                      <StatusBadge status={room.status} />
+                      <div className="flex items-center gap-2">
+                        <StatusBadge status={room.status} />
+                        <StatusQuickSwitch roomId={room.id} status={room.status} />
+                      </div>
                     </td>
                     <td className="py-2 align-top">
                       <RoomActions
@@ -124,6 +154,23 @@ export default async function AdminDashboardPage() {
           </Link>
         </div>
       ) : null}
+    </div>
+  );
+}
+
+function KpiCard({
+  label,
+  value,
+  accent,
+}: {
+  label: string;
+  value: string;
+  accent?: string;
+}) {
+  return (
+    <div className="rounded-xl bg-white p-4 shadow-sm ring-1 ring-black/5">
+      <p className="text-xs uppercase tracking-wide text-slate-400">{label}</p>
+      <p className={`mt-1 text-2xl font-bold ${accent ?? "text-slate-900"}`}>{value}</p>
     </div>
   );
 }

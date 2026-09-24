@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { listAllEvents, listProperties, listRooms } from "@/lib/db";
 import { formatVnd } from "@/lib/format";
+import CommissionCalculator from "@/components/CommissionCalculator";
 
 export const dynamic = "force-dynamic";
 
@@ -63,6 +64,22 @@ export default async function CommissionsPage() {
           value={formatVnd(totalCancellationSaleShare)}
         />
       </div>
+
+      <CommissionCalculator
+        rooms={rooms
+          .filter((r) => r.isActive)
+          .map((r) => ({
+            id: r.id,
+            code: r.code,
+            priceMonthly: r.priceMonthly,
+            propertyId: r.propertyId,
+          }))}
+        properties={properties.map((p) => ({
+          id: p.id,
+          name: p.name,
+          commissionPolicy: p.commissionPolicy,
+        }))}
+      />
 
       <div className="overflow-x-auto rounded-xl bg-white p-5 shadow-sm ring-1 ring-black/5">
         <table className="w-full min-w-[720px] text-left text-sm">

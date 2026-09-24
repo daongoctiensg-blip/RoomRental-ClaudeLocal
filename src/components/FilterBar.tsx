@@ -5,6 +5,7 @@ import { useCallback, useTransition } from "react";
 import { ROOM_STATUSES, ROOM_STATUS_LABEL, type RoomStatus } from "@/types";
 import { PRICE_BUCKETS } from "@/lib/priceBuckets";
 import PriceRangeSlider from "@/components/PriceRangeSlider";
+import { COMMON_AMENITY_KEYWORDS } from "@/lib/amenityKeywords";
 
 /**
  * Secondary refinement filters (status, price bucket). The primary search
@@ -99,6 +100,45 @@ export default function FilterBar() {
     }
   };
 
+  const selectedOccupancy = searchParams.get("occupancy");
+
+  const toggleOccupancy = (value: "1" | "2" | "3") => {
+    pushParams((params) => {
+      if (params.get("occupancy") === value) {
+        params.delete("occupancy");
+      } else {
+        params.set("occupancy", value);
+      }
+    });
+  };
+
+  // "Tiện ích phổ biến" — round 10, §12. Free-text keyword match against
+  // amenitiesShared/amenitiesOverride, applied in page.tsx after listRooms()
+  // returns (not a SQL filter) — see src/lib/amenityKeywords.ts. No schema
+  // change: the checkbox list is a fixed set of common keywords, not a real
+  // column.
+  const selectedAmenities = new Set(
+    (searchParams.get("amenities") ?? "").split(",").filter(Boolean)
+  );
+
+  const toggleAmenity = (keyword: string) => {
+    pushParams((params) => {
+      const current = new Set(
+        (params.get("amenities") ?? "").split(",").filter(Boolean)
+      );
+      if (current.has(keyword)) {
+        current.delete(keyword);
+      } else {
+        current.add(keyword);
+      }
+      if (current.size === 0) {
+        params.delete("amenities");
+      } else {
+        params.set("amenities", Array.from(current).join(","));
+      }
+    });
+  };
+
   return (
     <div
       className={`flex flex-col gap-5 rounded-xl bg-white p-4 shadow-sm ring-1 ring-black/5 ${
@@ -155,6 +195,61 @@ export default function FilterBar() {
         </div>
         <PriceRangeSlider min={selectedMin} max={selectedMax} onChange={applyRange} />
       </div>
+
+      <div>
+        <h3 className="mb-2 text-xs font-semibold uppercase tracking-wide text-slate-500">
+          Số người ở
+        </h3>
+        <div className="flex flex-wrap gap-2">
+          {OCCUPANCY_OPTIONS.map((opt) => {
+            const active = selectedOccupancy === opt.value;
+            return (
+              <button
+                key={opt.value}
+                type="button"
+                onClick={() => toggleOccupancy(opt.value)}
+                className={`rounded-full border px-3 py-1.5 text-sm transition ${
+                  active
+                    ? "border-[color:var(--color-accent)] bg-[color:var(--color-accent-light)] text-[color:var(--color-accent-dark)]"
+                    : "border-slate-300 text-slate-600 hover:bg-slate-50"
+                }`}
+              >
+                {opt.label}
+              </button>
+            );
+          })}
+        </div>
+      </div>
+
+      <div>
+        <h3 className="mb-2 text-xs font-semibold uppercase tracking-wide text-slate-500">
+          Tiện ích phổ biến
+        </h3>
+        <div className="flex flex-col gap-2">
+          {COMMON_AMENITY_KEYWORDS.map((keyword) => (
+            <label
+              key={keyword}
+              className="flex items-center gap-2 text-sm text-slate-600"
+            >
+              <input
+                type="checkbox"
+                checked={selectedAmenities.has(keyword)}
+                onChange={() => toggleAmenity(keyword)}
+                className="h-4 w-4 rounded border-slate-300 text-[color:var(--color-accent)] focus:ring-[color:var(--color-accent)]"
+              />
+              {keyword}
+            </label>
+          ))}
+        </div>
+      </div>
     </div>
   );
 }
+
+// "3" means "3 người trở lên" — matches listRooms()'s occupancy=3 handling
+// (max_occupancy >= 3) in src/lib/db.ts.
+const OCCUPANCY_OPTIONS: { value: "1" | "2" | "3"; label: string }[] = [
+  { value: "1", label: "1 người" },
+  { value: "2", label: "2 người" },
+  { value: "3", label: "3-4 người" },
+];

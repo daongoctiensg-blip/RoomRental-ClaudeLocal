@@ -117,6 +117,49 @@ async function ensureCityWardColumns(pool: import("mysql2/promise").Pool): Promi
   }
 }
 
+// Additive migration for the 3 new business fields confirmed with the owner
+// (see room-rental-platform-business-requirements-v6-addendum.md):
+// properties.customer_promotion (public promo banner, separate from the
+// internal sale_bonus_policy), rooms.max_occupancy ("Số người ở" filter),
+// rooms.view_count (real view counter). Same information_schema-check-then-
+// ALTER pattern as ensureCityWardColumns() above.
+async function ensureNewBusinessFieldsColumns(pool: import("mysql2/promise").Pool): Promise<void> {
+  const [propCols] = await pool.query(
+    `SELECT COLUMN_NAME FROM information_schema.COLUMNS
+     WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'properties'
+       AND COLUMN_NAME = 'customer_promotion'`
+  );
+  if ((propCols as unknown[]).length === 0) {
+    await alterIfMissing(
+      pool,
+      "ALTER TABLE properties ADD COLUMN customer_promotion TEXT NULL AFTER sale_bonus_policy",
+      "Adding properties.customer_promotion column"
+    );
+  }
+
+  const [roomCols] = await pool.query(
+    `SELECT COLUMN_NAME FROM information_schema.COLUMNS
+     WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'rooms'
+       AND COLUMN_NAME IN ('max_occupancy', 'view_count')`
+  );
+  const existingRoomCols = new Set((roomCols as { COLUMN_NAME: string }[]).map((c) => c.COLUMN_NAME));
+
+  if (!existingRoomCols.has("max_occupancy")) {
+    await alterIfMissing(
+      pool,
+      "ALTER TABLE rooms ADD COLUMN max_occupancy INT NULL AFTER price_monthly",
+      "Adding rooms.max_occupancy column"
+    );
+  }
+  if (!existingRoomCols.has("view_count")) {
+    await alterIfMissing(
+      pool,
+      "ALTER TABLE rooms ADD COLUMN view_count INT NOT NULL DEFAULT 0 AFTER max_occupancy",
+      "Adding rooms.view_count column"
+    );
+  }
+}
+
 async function main() {
   const pool = getPool();
 
@@ -142,6 +185,7 @@ async function main() {
   console.log("Schema OK.");
 
   await ensureCityWardColumns(pool);
+  await ensureNewBusinessFieldsColumns(pool);
 
   const [rows] = await pool.query("SELECT COUNT(*) AS n FROM properties");
   const count = (rows as { n: number }[])[0].n;
@@ -161,8 +205,8 @@ async function main() {
          landlord_name, landlord_contact_phone, landlord_zalo,
          amenities_shared, transport_notes, utility_fee_versions,
          deposit_policy, deposit_cancellation_policy, commission_policy,
-         sale_bonus_policy, images, is_active, created_at, updated_at)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+         sale_bonus_policy, customer_promotion, images, is_active, created_at, updated_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       [
         p.id,
         p.name,
@@ -184,6 +228,7 @@ async function main() {
         JSON.stringify(p.depositCancellationPolicy),
         JSON.stringify(p.commissionPolicy),
         p.saleBonusPolicy ? JSON.stringify(p.saleBonusPolicy) : null,
+        p.customerPromotion ?? null,
         JSON.stringify(p.images),
         p.isActive ? 1 : 0,
         p.createdAt,
@@ -196,9 +241,10 @@ async function main() {
     await pool.query(
       `INSERT INTO rooms
         (id, property_id, code, floor, area_sqm, has_balcony, price_monthly,
+         max_occupancy, view_count,
          status, status_updated_at, current_deposit, sub_units,
          amenities_override, images, description, is_active, created_at, updated_at)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       [
         r.id,
         r.propertyId,
@@ -207,6 +253,8 @@ async function main() {
         r.areaSqm,
         r.hasBalcony ? 1 : 0,
         r.priceMonthly,
+        r.maxOccupancy ?? null,
+        r.viewCount ?? 0,
         r.status,
         r.statusUpdatedAt,
         r.currentDeposit ? JSON.stringify(r.currentDeposit) : null,

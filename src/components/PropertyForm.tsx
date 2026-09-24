@@ -35,6 +35,7 @@ type FormState = {
   bonusAmount: number;
   bonusValidFrom: string;
   bonusValidTo: string;
+  customerPromotion: string;
   electricityPricePerKwh: number;
   waterPricePerPerson: number;
   serviceFeePerMonth: number;
@@ -77,6 +78,7 @@ function toFormState(property?: Property): FormState {
     bonusAmount: property?.saleBonusPolicy?.amount ?? 0,
     bonusValidFrom: property?.saleBonusPolicy?.validFrom ?? "",
     bonusValidTo: property?.saleBonusPolicy?.validTo ?? "",
+    customerPromotion: property?.customerPromotion ?? "",
     electricityPricePerKwh: fee?.electricityPricePerKwh ?? 0,
     waterPricePerPerson: fee?.waterPricePerPerson ?? 0,
     serviceFeePerMonth: fee?.serviceFeePerMonth ?? 0,
@@ -221,6 +223,7 @@ export default function PropertyForm({ property }: { property?: Property }) {
             validTo: form.bonusValidTo,
           }
         : undefined,
+      customerPromotion: form.customerPromotion.trim() || undefined,
       isActive: property?.isActive ?? true,
       utilityFeeVersions: property?.utilityFeeVersions ?? [],
     };
@@ -653,6 +656,23 @@ export default function PropertyForm({ property }: { property?: Property }) {
             />
           </Field>
         </div>
+      </Section>
+
+      <Section title="Khuyến mãi cho khách (công khai — hiện cho khách xem)">
+        <p className="-mt-1 text-xs text-slate-400">
+          Khác hoàn toàn với lì xì cho sale ở trên (mục đó luôn ẩn khách).
+          Nội dung ở đây admin gõ gì thì hiện y vậy cho khách xem trên trang
+          chi tiết phòng và bản xuất PDF. Để trống nếu không có khuyến mãi.
+        </p>
+        <Field label="Nội dung khuyến mãi">
+          <textarea
+            value={form.customerPromotion}
+            onChange={(e) => update("customerPromotion", e.target.value)}
+            rows={3}
+            placeholder='Ví dụ: "Ký hợp đồng từ 12 tháng, tặng ngay 1 tháng phí dịch vụ."'
+            className={inputClass}
+          />
+        </Field>
       </Section>
 
       {error ? <p className="text-sm text-red-600">{error}</p> : null}

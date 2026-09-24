@@ -87,6 +87,14 @@ export interface SaleBonusPolicy {
   validTo: string;
 }
 
+// Genuinely separate from SaleBonusPolicy above: a PUBLIC, free-text
+// promotion shown to customers (e.g. "Giảm 500.000đ tháng đầu khi ký hợp
+// đồng từ 12 tháng"). Unlike SaleBonusPolicy this has no structured
+// amount/date-range — the admin just types whatever they want shown — and it
+// never affects commission or bonus calculations. Empty/undefined means no
+// banner is shown. Must stay OUT of any internal-only Omit list (see
+// PublicProperty below): it is customer-facing by design.
+
 export interface Property {
   id: string;
   name: string;
@@ -124,6 +132,8 @@ export interface Property {
   commissionPolicy: CommissionTier[];
   /** Internal only ("lì xì"). */
   saleBonusPolicy?: SaleBonusPolicy;
+  /** Public — free-text customer promotion banner. See comment on the type above. */
+  customerPromotion?: string;
   images: string[];
   isActive: boolean;
   createdAt: string;
@@ -164,6 +174,16 @@ export interface Room {
   areaSqm: number;
   hasBalcony: boolean;
   priceMonthly: number;
+  /** Max number of occupants the room is listed for (e.g. 2, 4). Optional —
+   * used only for the "Số người ở" customer filter, not enforced elsewhere. */
+  maxOccupancy?: number;
+  /** Real counter of how many times the room's public detail page has been
+   * opened — incremented for every viewer (customer, sale, admin alike).
+   * Never randomized/decorative, unlike the (separately, explicitly
+   * approved-as-fake) rating shown in the UI. Owner confirmed (round 9)
+   * this is shown PUBLICLY to customers (OTA-style "N lượt xem"), matching
+   * how AI 2 (Gemini) surfaces it — not internal-only. */
+  viewCount: number;
   status: RoomStatus;
   statusUpdatedAt: string;
   /** Set only while status === "deposited"; cleared on cancel/expire/sign. */
@@ -207,6 +227,10 @@ export interface RoomFilter {
   status?: RoomStatus[];
   priceMin?: number;
   priceMax?: number;
+  /** "Số người ở" filter buckets. 1 = exactly 1, 2 = exactly 2, 3 = 3 or
+   * more (matches the 3-4 người bucket shown in the UI). Rooms with no
+   * maxOccupancy set are excluded when this filter is active. */
+  occupancy?: 1 | 2 | 3;
   /** Result order — ignored when `address` is set (that always sorts
    * nearest-first / keyword-relevance instead, see listRooms). */
   sortBy?: "default" | "price_asc" | "price_desc" | "newest";

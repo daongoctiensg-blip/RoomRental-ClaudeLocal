@@ -1,4 +1,7 @@
 @import "tailwindcss";
+/* Leaflet's own stylesheet (map tiles/controls) — needed by
+   src/components/PropertyMap.tsx. Free OpenStreetMap tiles, no API key. */
+@import "leaflet/dist/leaflet.css";
 
 :root {
   --background: #f4f6f9;

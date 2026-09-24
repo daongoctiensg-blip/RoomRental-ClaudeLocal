@@ -43,6 +43,11 @@ CREATE TABLE IF NOT EXISTS properties (
   deposit_cancellation_policy JSON NOT NULL,
   commission_policy JSON NOT NULL,
   sale_bonus_policy JSON NULL,
+  -- Public, free-text customer promotion banner — genuinely separate from
+  -- sale_bonus_policy above (that one is internal, never shown to
+  -- customers). See ensureNewBusinessFieldsColumns() in migrate.ts for the
+  -- additive ALTER on pre-existing databases.
+  customer_promotion TEXT NULL,
   images JSON NOT NULL,
   is_active TINYINT(1) NOT NULL DEFAULT 1,
   created_at VARCHAR(30) NOT NULL,
@@ -67,6 +72,11 @@ CREATE TABLE IF NOT EXISTS rooms (
   area_sqm DECIMAL(10,2) NOT NULL,
   has_balcony TINYINT(1) NOT NULL DEFAULT 0,
   price_monthly DECIMAL(14,2) NOT NULL,
+  -- max_occupancy: optional, backs the "Số người ở" customer filter only.
+  max_occupancy INT NULL,
+  -- view_count: real counter, incremented once per detail-page open for
+  -- every viewer type (customer/sale/admin). Never randomized.
+  view_count INT NOT NULL DEFAULT 0,
   status VARCHAR(20) NOT NULL,
   status_updated_at VARCHAR(30) NOT NULL,
   current_deposit JSON NULL,

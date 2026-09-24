@@ -68,6 +68,13 @@ export default async function RoomExportPage({
         ) : null}
       </header>
 
+      {property.customerPromotion ? (
+        <div className="mb-6 break-inside-avoid rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900 print:border print:bg-transparent">
+          <span className="font-semibold">Khuyến mãi: </span>
+          {property.customerPromotion}
+        </div>
+      ) : null}
+
       <div className="mb-6 grid grid-cols-2 gap-2 print:grid-cols-3">
         <RoomPhoto
           src={photos[0]}

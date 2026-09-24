@@ -1,10 +1,11 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
-import { getRoom, getCurrentUtilityFee, toPublicRoom } from "@/lib/db";
+import { getRoom, getCurrentUtilityFee, toPublicRoom, recordRoomView } from "@/lib/db";
 import { isAdminSession } from "@/lib/apiAuth";
 import StatusBadge from "@/components/StatusBadge";
 import RoomPhoto from "@/components/RoomPhoto";
 import DepositCountdown from "@/components/DepositCountdown";
+import ShareButtons from "@/components/ShareButtons";
 import { formatVnd, telHref, zaloHref } from "@/lib/format";
 import type { Property, PublicProperty, PublicRoom, RoomWithProperty } from "@/types";
 
@@ -29,6 +30,13 @@ export default async function RoomDetailPage({
   // (e.g. to review before reactivating), so this only applies to
   // non-admins. Found in QA: this page had no active-status check at all.
   if (!admin && (!fullRoom.isActive || !fullRoom.property.isActive)) notFound();
+  // Real view counter — every open of this page counts, for every viewer
+  // type (customer, sale, admin alike). Deliberately NOT called from
+  // getRoom() itself, since that's also used by non-detail-page contexts
+  // (admin edit form load, API lookups, contract flows) where a view should
+  // not be counted. Not awaited: counting a view is not something the
+  // visitor should ever wait on or see fail the page over.
+  void recordRoomView(id);
   // Customer gets the sanitized shape (no commission, no landlord contact,
   // no "lì xì", no cancellation split) — same as always. A logged-in admin
   // gets the full internal data instead, shown in a clearly separated panel
@@ -68,6 +76,13 @@ export default async function RoomDetailPage({
           <StatusBadge status={room.status} />
         </div>
 
+        {property.customerPromotion ? (
+          <div className="mb-4 rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900">
+            <span className="font-semibold">Khuyến mãi: </span>
+            {property.customerPromotion}
+          </div>
+        ) : null}
+
         <div className="grid grid-cols-1 gap-2 sm:grid-cols-3">
           <RoomPhoto
             src={photos[0]}
@@ -97,6 +112,12 @@ export default async function RoomDetailPage({
                   label="Giá thuê"
                   value={`${formatVnd(room.priceMonthly)}/tháng`}
                 />
+                {room.maxOccupancy ? (
+                  <Fact label="Số người ở tối đa" value={`${room.maxOccupancy} người`} />
+                ) : null}
+                {room.viewCount > 0 ? (
+                  <Fact label="Lượt xem" value={`${room.viewCount}`} />
+                ) : null}
               </dl>
               {room.description ? (
                 <p className="mt-4 text-sm text-slate-600">{room.description}</p>
@@ -231,6 +252,10 @@ export default async function RoomDetailPage({
                   Xuất PDF
                 </Link>
               </div>
+              <ShareButtons
+                title={`Phòng ${room.code} · ${property.name}`}
+                phone={property.contactPhone}
+              />
               <p className="mt-3 text-center text-xs text-slate-400">
                 Liên hệ để hẹn xem phòng trực tiếp
               </p>

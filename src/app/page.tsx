@@ -1,13 +1,16 @@
 import Link from "next/link";
-import { listRooms } from "@/lib/db";
+import { listProperties, listRooms } from "@/lib/db";
 import { isAdminSession } from "@/lib/apiAuth";
 import RoomCard from "@/components/RoomCard";
 import FilterBar from "@/components/FilterBar";
 import MainSearchBar from "@/components/MainSearchBar";
+import QuickBuildingFilter from "@/components/QuickBuildingFilter";
+import MapToggle from "@/components/MapToggle";
 import SortControl from "@/components/SortControl";
 import LogoutButton from "@/components/LogoutButton";
 import type { RoomStatus } from "@/types";
 import { ROOM_STATUSES } from "@/types";
+import { roomMatchesAllAmenityKeywords } from "@/lib/amenityKeywords";
 
 export const dynamic = "force-dynamic";
 
@@ -73,7 +76,17 @@ export default async function HomePage({
     priceMax = bucket?.max ?? undefined;
   }
 
-  const [rooms, admin] = await Promise.all([
+  const occupancyParam = firstValue(sp.occupancy);
+  const occupancy =
+    occupancyParam === "1" || occupancyParam === "2" || occupancyParam === "3"
+      ? (Number(occupancyParam) as 1 | 2 | 3)
+      : undefined;
+
+  // "Khu vực nhanh" — round 10, §12. Same propertyId param GET /api/rooms
+  // already understands.
+  const propertyId = firstValue(sp.propertyId);
+
+  const [allRooms, properties, admin] = await Promise.all([
     listRooms({
       status: statuses,
       city,
@@ -82,10 +95,52 @@ export default async function HomePage({
       address,
       priceMin,
       priceMax,
+      occupancy,
+      propertyId,
       sortBy,
     }),
+    listProperties(),
     isAdminSession(),
   ]);
+
+  // "Tiện ích phổ biến" — round 10, §12. Keyword match applied here, after
+  // listRooms(), rather than as a SQL clause — see src/lib/amenityKeywords.ts
+  // for why (no schema change: amenities are still just free text).
+  const amenitiesParam = firstValue(sp.amenities);
+  const selectedAmenities = amenitiesParam
+    ? amenitiesParam.split(",").filter(Boolean)
+    : [];
+  const rooms =
+    selectedAmenities.length > 0
+      ? allRooms.filter((r) =>
+          roomMatchesAllAmenityKeywords(
+            r.amenitiesOverride ?? r.property.amenitiesShared,
+            selectedAmenities
+          )
+        )
+      : allRooms;
+
+  // Map markers: one per property with coordinates, each carrying its
+  // currently-available rooms (matches what a customer landing on the map
+  // could actually still book) — independent of whatever status filter is
+  // active in the list above, since the map is a separate way to browse.
+  const availableRoomsByProperty = new Map<string, { id: string; code: string; priceMonthly: number }[]>();
+  for (const r of allRooms) {
+    if (r.status !== "available" || !r.isActive) continue;
+    const list = availableRoomsByProperty.get(r.propertyId) ?? [];
+    list.push({ id: r.id, code: r.code, priceMonthly: r.priceMonthly });
+    availableRoomsByProperty.set(r.propertyId, list);
+  }
+  const mapProperties = properties
+    .filter((p) => p.isActive && p.lat != null && p.lng != null)
+    .map((p) => ({
+      id: p.id,
+      name: p.name,
+      addressNew: p.addressNew,
+      lat: p.lat as number,
+      lng: p.lng as number,
+      rooms: availableRoomsByProperty.get(p.id) ?? [],
+    }));
 
   return (
     <div className="flex min-h-screen flex-col">
@@ -119,9 +174,19 @@ export default async function HomePage({
       </header>
 
       <main className="mx-auto w-full max-w-[1600px] flex-1 px-4 py-6 sm:px-6 lg:px-10">
-        <div className="mb-6">
+        <div className="mb-4">
           <MainSearchBar />
         </div>
+
+        <div className="mb-6">
+          <QuickBuildingFilter
+            properties={properties
+              .filter((p) => p.isActive)
+              .map((p) => ({ id: p.id, name: p.name }))}
+          />
+        </div>
+
+        <MapToggle properties={mapProperties} />
 
         <div className="grid grid-cols-1 gap-6 lg:grid-cols-[240px_1fr]">
           <aside className="lg:sticky lg:top-6 lg:self-start">
