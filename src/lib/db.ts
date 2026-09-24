@@ -139,6 +139,7 @@ function rowToRoom(row: any): Room {
       : undefined,
     images: parseJson(row.images, []),
     description: row.description ?? undefined,
+    internalNotes: row.internal_notes ?? undefined,
     isActive: !!row.is_active,
     createdAt: row.created_at,
     updatedAt: row.updated_at,
@@ -577,7 +578,13 @@ export function toPublicProperty(property: Property): PublicProperty {
 }
 
 export function toPublicRoom(room: RoomWithProperty): PublicRoom {
-  const { currentDeposit: _currentDeposit, propertyId: _propertyId, property, ...rest } = room;
+  const {
+    currentDeposit: _currentDeposit,
+    propertyId: _propertyId,
+    internalNotes: _internalNotes,
+    property,
+    ...rest
+  } = room;
   return { ...rest, property: toPublicProperty(property) };
 }
 
@@ -837,8 +844,8 @@ export async function createRoom(input: RoomInput): Promise<Room> {
       (id, property_id, code, floor, area_sqm, has_balcony, price_monthly,
        max_occupancy, view_count,
        status, status_updated_at, current_deposit, sub_units,
-       amenities_override, images, description, is_active, created_at, updated_at)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+       amenities_override, images, description, internal_notes, is_active, created_at, updated_at)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
     [
       room.id,
       room.propertyId,
@@ -856,6 +863,7 @@ export async function createRoom(input: RoomInput): Promise<Room> {
       room.amenitiesOverride ? JSON.stringify(room.amenitiesOverride) : null,
       JSON.stringify(room.images),
       room.description ?? null,
+      room.internalNotes ?? null,
       room.isActive ? 1 : 0,
       room.createdAt,
       room.updatedAt,
@@ -873,6 +881,7 @@ const ROOM_COLUMN_MAP: Record<string, string> = {
   priceMonthly: "price_monthly",
   maxOccupancy: "max_occupancy",
   description: "description",
+  internalNotes: "internal_notes",
   isActive: "is_active",
 };
 const ROOM_JSON_COLUMN_MAP: Record<string, string> = {

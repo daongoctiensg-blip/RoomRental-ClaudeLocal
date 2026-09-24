@@ -7,6 +7,7 @@ import Link from "next/link";
 import type { CommissionTier, RoomStatus } from "@/types";
 import { formatVnd } from "@/lib/format";
 import DepositCountdown from "@/components/DepositCountdown";
+import { useConfirm } from "@/components/dialogs/DialogProvider";
 
 type Props = {
   roomId: string;
@@ -22,6 +23,7 @@ export default function RoomActions({
   commissionPolicy,
 }: Props) {
   const router = useRouter();
+  const confirmDialog = useConfirm();
   const [busy, setBusy] = useState(false);
   const [message, setMessage] = useState<React.ReactNode | null>(null);
   const [showContractForm, setShowContractForm] = useState(false);
@@ -49,14 +51,20 @@ export default function RoomActions({
   };
 
   const onStartDeposit = async () => {
-    if (!confirm("Xác nhận khách đã đặt cọc giữ phòng?")) return;
+    const ok = await confirmDialog("Xác nhận khách đã đặt cọc giữ phòng?");
+    if (!ok) return;
     await call(apiUrl(`/api/rooms/${roomId}/deposit`));
   };
 
   const onCancelDeposit = async () => {
-    if (!confirm("Khách chủ động huỷ cọc trước hạn? (dùng cho trường hợp khách quay lại báo huỷ, KHÔNG dùng cho trường hợp khách im lặng biến mất — case đó hệ thống tự xử lý khi hết hạn)")) {
-      return;
-    }
+    const ok = await confirmDialog({
+      title: "Huỷ cọc",
+      message:
+        "Khách chủ động huỷ cọc trước hạn? (dùng cho trường hợp khách quay lại báo huỷ, KHÔNG dùng cho trường hợp khách im lặng biến mất — case đó hệ thống tự xử lý khi hết hạn)",
+      confirmLabel: "Huỷ cọc",
+      danger: true,
+    });
+    if (!ok) return;
     const data = await call(apiUrl(`/api/rooms/${roomId}/deposit/cancel`));
     if (data?.settlement) {
       const s = data.settlement;

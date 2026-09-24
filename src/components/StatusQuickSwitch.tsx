@@ -4,6 +4,7 @@ import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { apiUrl } from "@/lib/basePath";
 import type { RoomStatus } from "@/types";
+import { useAlertDialog } from "@/components/dialogs/DialogProvider";
 
 /**
  * "1-click" status change — round 10, §16. Deliberately restricted to
@@ -22,6 +23,7 @@ export default function StatusQuickSwitch({
   status: RoomStatus;
 }) {
   const router = useRouter();
+  const alertDialog = useAlertDialog();
   const [busy, setBusy] = useState(false);
 
   if (status !== "available" && status !== "renovating") return null;
@@ -37,7 +39,7 @@ export default function StatusQuickSwitch({
       });
       if (!res.ok) {
         const data = await res.json().catch(() => ({}));
-        alert(data.error ?? "Có lỗi xảy ra");
+        await alertDialog(data.error ?? "Có lỗi xảy ra");
       }
     } finally {
       setBusy(false);

@@ -22,7 +22,17 @@ export const ROOM_STATUS_LABEL: Record<RoomStatus, string> = {
 export interface UtilityFeeVersion {
   id: string;
   electricityPricePerKwh: number;
+  /** Always the numeric water rate, regardless of `waterFeeMode` — VND per
+   * person when mode is "per_person", VND per m³ when mode is "per_m3". Kept
+   * under this name (not renamed to a generic "waterPrice") so existing rows
+   * written before `waterFeeMode` existed keep working unchanged: they're
+   * simply treated as "per_person", matching how the app billed water before
+   * round 11. */
   waterPricePerPerson: number;
+  /** How `waterPricePerPerson` above should be read: per occupant, or per m³
+   * consumed. Optional — absent/undefined means "per_person" (the only mode
+   * that existed before round 11), so old data never needs a backfill. */
+  waterFeeMode?: "per_person" | "per_m3";
   serviceFeePerMonth: number;
   /** ISO date string (yyyy-mm-dd). The active version is the latest one with effectiveFrom <= today. */
   effectiveFrom: string;
@@ -192,13 +202,19 @@ export interface Room {
   amenitiesOverride?: string[];
   images: string[];
   description?: string;
+  /** Internal-only free-text notes for admin/sale — e.g. "khách hẹn xem
+   * phòng thứ 5", "đang thương lượng giảm giá". Completely separate from
+   * `description` above (which is public): never sent to a customer, shown
+   * only in the admin-only "Nội bộ (Sale)" panel. Added round 11, inspired
+   * by AI 2 (Gemini)'s `internal_notes` field. */
+  internalNotes?: string;
   isActive: boolean;
   createdAt: string;
   updatedAt: string;
 }
 
 /** Everything about a Room (and its embedded property) safe to send publicly. */
-export type PublicRoom = Omit<Room, "currentDeposit" | "propertyId"> & {
+export type PublicRoom = Omit<Room, "currentDeposit" | "propertyId" | "internalNotes"> & {
   property: PublicProperty;
 };
 

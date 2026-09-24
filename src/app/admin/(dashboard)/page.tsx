@@ -3,6 +3,7 @@ import { listProperties, listRooms } from "@/lib/db";
 import RoomActions from "@/components/RoomActions";
 import StatusBadge from "@/components/StatusBadge";
 import StatusQuickSwitch from "@/components/StatusQuickSwitch";
+import DuplicateRoomButton from "@/components/DuplicateRoomButton";
 import { formatVnd } from "@/lib/format";
 
 export const dynamic = "force-dynamic";
@@ -103,6 +104,14 @@ export default async function AdminDashboardPage() {
                   <tr key={room.id}>
                     <td className="py-2 font-medium text-slate-800 align-top">
                       {room.code}
+                      {room.internalNotes ? (
+                        <span
+                          title={room.internalNotes}
+                          className="ml-1 cursor-help text-amber-500"
+                        >
+                          📝
+                        </span>
+                      ) : null}
                     </td>
                     <td className="py-2 text-slate-600 align-top">{room.floor ?? "—"}</td>
                     <td className="py-2 text-slate-600 align-top">{room.areaSqm} m²</td>
@@ -124,12 +133,15 @@ export default async function AdminDashboardPage() {
                       />
                     </td>
                     <td className="py-2 text-right align-top">
-                      <Link
-                        href={`/admin/rooms/${room.id}`}
-                        className="text-sm font-medium text-[color:var(--color-accent)] hover:underline"
-                      >
-                        Sửa
-                      </Link>
+                      <div className="flex flex-col items-end gap-1">
+                        <Link
+                          href={`/admin/rooms/${room.id}`}
+                          className="text-sm font-medium text-[color:var(--color-accent)] hover:underline"
+                        >
+                          Sửa
+                        </Link>
+                        <DuplicateRoomButton room={room} />
+                      </div>
                     </td>
                   </tr>
                 ))}

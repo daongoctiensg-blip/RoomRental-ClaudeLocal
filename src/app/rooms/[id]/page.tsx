@@ -3,9 +3,9 @@ import { notFound } from "next/navigation";
 import { getRoom, getCurrentUtilityFee, toPublicRoom, recordRoomView } from "@/lib/db";
 import { isAdminSession } from "@/lib/apiAuth";
 import StatusBadge from "@/components/StatusBadge";
-import RoomPhoto from "@/components/RoomPhoto";
 import DepositCountdown from "@/components/DepositCountdown";
 import ShareButtons from "@/components/ShareButtons";
+import PhotoGallery from "@/components/PhotoGallery";
 import { formatVnd, telHref, zaloHref } from "@/lib/format";
 import type { Property, PublicProperty, PublicRoom, RoomWithProperty } from "@/types";
 
@@ -83,21 +83,7 @@ export default async function RoomDetailPage({
           </div>
         ) : null}
 
-        <div className="grid grid-cols-1 gap-2 sm:grid-cols-3">
-          <RoomPhoto
-            src={photos[0]}
-            alt={`Ảnh chính phòng ${room.code}`}
-            className="col-span-full h-72 w-full rounded-xl object-cover sm:col-span-2 sm:row-span-2 sm:h-full"
-          />
-          {photos.slice(1, 5).map((src, i) => (
-            <RoomPhoto
-              key={i}
-              src={src}
-              alt={`Ảnh phòng ${room.code} ${i + 2}`}
-              className="h-32 w-full rounded-xl object-cover sm:h-full"
-            />
-          ))}
-        </div>
+        <PhotoGallery photos={photos} roomCode={room.code} />
 
         <div className="mt-6 grid grid-cols-1 gap-6 lg:grid-cols-[1fr_320px]">
           <div className="flex flex-col gap-5">
@@ -188,7 +174,7 @@ export default async function RoomDetailPage({
                   />
                   <Fact
                     label="Nước"
-                    value={`${formatVnd(fee.waterPricePerPerson)}/người`}
+                    value={`${formatVnd(fee.waterPricePerPerson)}/${fee.waterFeeMode === "per_m3" ? "m³" : "người"}`}
                   />
                   <Fact
                     label="Phí dịch vụ"
@@ -269,6 +255,17 @@ export default async function RoomDetailPage({
                     Khách không thấy mục này
                   </span>
                 </h2>
+
+                {fullRoom.internalNotes ? (
+                  <div className="mb-4 rounded-lg bg-white p-3 ring-1 ring-amber-200">
+                    <dt className="text-xs uppercase tracking-wide text-amber-700">
+                      Ghi chú nội bộ
+                    </dt>
+                    <dd className="mt-1 whitespace-pre-wrap text-sm text-amber-900">
+                      {fullRoom.internalNotes}
+                    </dd>
+                  </div>
+                ) : null}
 
                 <div className="grid grid-cols-1 gap-3 text-sm sm:grid-cols-2">
                   <Fact label="Chủ nhà" value={fullRoom.property.landlordName || "—"} />

@@ -84,6 +84,9 @@ CREATE TABLE IF NOT EXISTS rooms (
   amenities_override JSON NULL,
   images JSON NOT NULL,
   description TEXT NULL,
+  -- internal_notes: admin/sale-only free text (round 11), separate from the
+  -- public `description` above — never sent to a customer, see toPublicRoom().
+  internal_notes TEXT NULL,
   is_active TINYINT(1) NOT NULL DEFAULT 1,
   created_at VARCHAR(30) NOT NULL,
   updated_at VARCHAR(30) NOT NULL,

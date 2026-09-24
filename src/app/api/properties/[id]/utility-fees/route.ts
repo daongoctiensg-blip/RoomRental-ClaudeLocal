@@ -23,7 +23,10 @@ export async function POST(request: NextRequest, { params }: Params) {
     typeof body.electricityPricePerKwh !== "number" ||
     typeof body.waterPricePerPerson !== "number" ||
     typeof body.serviceFeePerMonth !== "number" ||
-    !body.effectiveFrom
+    !body.effectiveFrom ||
+    (body.waterFeeMode !== undefined &&
+      body.waterFeeMode !== "per_person" &&
+      body.waterFeeMode !== "per_m3")
   ) {
     return NextResponse.json({ error: "Invalid payload" }, { status: 400 });
   }

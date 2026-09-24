@@ -4,6 +4,7 @@ import { useEffect, useRef, useState } from "react";
 import type { DocumentType, RoomDocument } from "@/types";
 import { DOCUMENT_TYPES, DOCUMENT_TYPE_LABEL } from "@/types";
 import { apiUrl } from "@/lib/basePath";
+import { useConfirm } from "@/components/dialogs/DialogProvider";
 
 /** Upload + list giấy tờ (hợp đồng, giấy xác nhận cọc, ...) cho 1 phòng.
  * Admin-only: file lưu ở kho riêng (/api/documents/*), tách biệt hẳn với
@@ -16,6 +17,7 @@ export default function RoomDocuments({ roomId }: { roomId: string }) {
   const [uploading, setUploading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const confirmDialog = useConfirm();
 
   const load = async () => {
     setLoading(true);
@@ -83,7 +85,13 @@ export default function RoomDocuments({ roomId }: { roomId: string }) {
   };
 
   const onDelete = async (id: string) => {
-    if (!confirm("Xoá giấy tờ này?")) return;
+    const ok = await confirmDialog({
+      title: "Xoá giấy tờ",
+      message: "Xoá giấy tờ này? Không thể hoàn tác.",
+      confirmLabel: "Xoá",
+      danger: true,
+    });
+    if (!ok) return;
     await fetch(apiUrl(`/api/rooms/${roomId}/documents/${id}`), { method: "DELETE" });
     await load();
   };

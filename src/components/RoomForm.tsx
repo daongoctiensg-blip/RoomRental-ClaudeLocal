@@ -34,6 +34,7 @@ export default function RoomForm({
     room?.maxOccupancy ?? ""
   );
   const [description, setDescription] = useState(room?.description ?? "");
+  const [internalNotes, setInternalNotes] = useState(room?.internalNotes ?? "");
   const [images, setImages] = useState((room?.images ?? []).join("\n"));
   const [amenitiesOverride, setAmenitiesOverride] = useState(
     (room?.amenitiesOverride ?? []).join("\n")
@@ -87,6 +88,7 @@ export default function RoomForm({
       maxOccupancy: maxOccupancy === "" ? undefined : Number(maxOccupancy),
       status: room?.status ?? "available",
       description: description || undefined,
+      internalNotes: internalNotes || undefined,
       images: splitLines(images),
       amenitiesOverride:
         amenitiesOverride.trim().length > 0
@@ -267,6 +269,27 @@ export default function RoomForm({
             rows={2}
             className={inputClass}
           />
+        </label>
+      </section>
+
+      <section className="rounded-xl border-2 border-amber-200 bg-amber-50 p-5">
+        <label className="flex flex-col gap-1">
+          <span className="flex items-center gap-2 text-sm font-medium text-amber-900">
+            Ghi chú nội bộ (Sale)
+            <span className="rounded-full bg-amber-200 px-2 py-0.5 text-[10px] font-medium uppercase tracking-wide text-amber-800">
+              Khách không thấy mục này
+            </span>
+          </span>
+          <textarea
+            value={internalNotes}
+            onChange={(e) => setInternalNotes(e.target.value)}
+            rows={2}
+            placeholder="VD: khách hẹn xem phòng thứ 5, đang thương lượng giảm giá…"
+            className={`${inputClass} bg-white`}
+          />
+          <span className="text-xs text-amber-700">
+            Hoàn toàn khác với Mô tả ở trên (mục đó công khai cho khách xem).
+          </span>
         </label>
       </section>
 

@@ -3,6 +3,16 @@ import type { RoomWithProperty } from "@/types";
 import StatusBadge from "@/components/StatusBadge";
 import RoomPhoto from "@/components/RoomPhoto";
 import { formatVnd, telHref, zaloHref } from "@/lib/format";
+import { COMMON_AMENITY_KEYWORDS, amenityListMatches } from "@/lib/amenityKeywords";
+
+// "Mới đăng" quick tag — round 11. A room created within this many days of
+// today gets a small "new listing" badge on its card, matching what most
+// rental sites do to draw attention to fresh inventory.
+const NEW_LISTING_DAYS = 7;
+function isNewListing(createdAt: string): boolean {
+  const ageMs = Date.now() - new Date(createdAt).getTime();
+  return ageMs >= 0 && ageMs <= NEW_LISTING_DAYS * 24 * 60 * 60 * 1000;
+}
 
 function isBonusActiveToday(validFrom: string, validTo: string): boolean {
   const today = new Date().toISOString().slice(0, 10);
@@ -22,6 +32,15 @@ export default function RoomCard({
   admin?: boolean;
 }) {
   const address = room.property.addressNew;
+  const amenities = room.amenitiesOverride ?? room.property.amenitiesShared;
+  // Quick tags — round 11: at-a-glance amenity badges so a customer doesn't
+  // have to open every room to see if it has A/C, a washing machine, etc.
+  // Matched against the same fixed keyword list the "Tiện ích phổ biến"
+  // filter uses (src/lib/amenityKeywords.ts), capped so the card doesn't get
+  // cluttered.
+  const quickAmenityTags = COMMON_AMENITY_KEYWORDS.filter((k) =>
+    amenityListMatches(amenities, k)
+  ).slice(0, 3);
 
   return (
     <article className="flex flex-col overflow-hidden rounded-xl bg-white shadow-md ring-1 ring-black/5 sm:flex-row">
@@ -48,9 +67,19 @@ export default function RoomCard({
         </div>
 
         <div className="flex flex-wrap gap-2 text-xs text-slate-600">
+          {isNewListing(room.createdAt) ? (
+            <span className="rounded-md bg-emerald-100 px-2.5 py-1 font-medium text-emerald-700">
+              ✨ Mới đăng
+            </span>
+          ) : null}
           <span className="rounded-md bg-slate-100 px-2.5 py-1">
             {room.areaSqm} m²
           </span>
+          {room.maxOccupancy ? (
+            <span className="rounded-md bg-slate-100 px-2.5 py-1">
+              {room.maxOccupancy} người
+            </span>
+          ) : null}
           {room.hasBalcony ? (
             <span className="rounded-md bg-slate-100 px-2.5 py-1">Ban công</span>
           ) : null}
@@ -59,6 +88,14 @@ export default function RoomCard({
               {room.subUnits.length} phòng ngủ riêng
             </span>
           ) : null}
+          {quickAmenityTags.map((tag) => (
+            <span
+              key={tag}
+              className="rounded-md bg-sky-50 px-2.5 py-1 text-sky-700"
+            >
+              {tag}
+            </span>
+          ))}
           {room.viewCount > 0 ? (
             <span className="rounded-md bg-slate-100 px-2.5 py-1 text-slate-500">
               👁 {room.viewCount} lượt xem

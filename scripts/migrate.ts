@@ -160,6 +160,28 @@ async function ensureNewBusinessFieldsColumns(pool: import("mysql2/promise").Poo
   }
 }
 
+// Additive migration for rooms.internal_notes (round 11 — admin/sale-only
+// free text, separate from the public `description` column). Same
+// information_schema-check-then-ALTER pattern as the functions above.
+// waterFeeMode (also round 11) needs NO migration here: UtilityFeeVersion
+// lives inside the properties.utility_fee_versions JSON column, so a new
+// optional key just starts appearing in newly-written JSON — nothing to
+// ALTER.
+async function ensureInternalNotesColumn(pool: import("mysql2/promise").Pool): Promise<void> {
+  const [cols] = await pool.query(
+    `SELECT COLUMN_NAME FROM information_schema.COLUMNS
+     WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'rooms'
+       AND COLUMN_NAME = 'internal_notes'`
+  );
+  if ((cols as unknown[]).length === 0) {
+    await alterIfMissing(
+      pool,
+      "ALTER TABLE rooms ADD COLUMN internal_notes TEXT NULL AFTER description",
+      "Adding rooms.internal_notes column"
+    );
+  }
+}
+
 async function main() {
   const pool = getPool();
 
@@ -186,6 +208,7 @@ async function main() {
 
   await ensureCityWardColumns(pool);
   await ensureNewBusinessFieldsColumns(pool);
+  await ensureInternalNotesColumn(pool);
 
   const [rows] = await pool.query("SELECT COUNT(*) AS n FROM properties");
   const count = (rows as { n: number }[])[0].n;
@@ -243,8 +266,8 @@ async function main() {
         (id, property_id, code, floor, area_sqm, has_balcony, price_monthly,
          max_occupancy, view_count,
          status, status_updated_at, current_deposit, sub_units,
-         amenities_override, images, description, is_active, created_at, updated_at)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+         amenities_override, images, description, internal_notes, is_active, created_at, updated_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       [
         r.id,
         r.propertyId,
@@ -262,6 +285,7 @@ async function main() {
         r.amenitiesOverride ? JSON.stringify(r.amenitiesOverride) : null,
         JSON.stringify(r.images),
         r.description ?? null,
+        r.internalNotes ?? null,
         r.isActive ? 1 : 0,
         r.createdAt,
         r.updatedAt,

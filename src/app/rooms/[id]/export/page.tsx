@@ -133,7 +133,7 @@ export default async function RoomExportPage({
         {fee ? (
           <dl className="mb-3 grid grid-cols-3 gap-3 text-sm">
             <Fact label="Điện" value={`${formatVnd(fee.electricityPricePerKwh)}/kWh`} />
-            <Fact label="Nước" value={`${formatVnd(fee.waterPricePerPerson)}/người`} />
+            <Fact label="Nước" value={`${formatVnd(fee.waterPricePerPerson)}/${fee.waterFeeMode === "per_m3" ? "m³" : "người"}`} />
             <Fact label="Phí dịch vụ" value={`${formatVnd(fee.serviceFeePerMonth)}/tháng`} />
           </dl>
         ) : null}

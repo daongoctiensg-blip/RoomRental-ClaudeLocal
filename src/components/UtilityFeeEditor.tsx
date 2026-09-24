@@ -16,6 +16,9 @@ export default function UtilityFeeEditor({
   const router = useRouter();
   const [electricity, setElectricity] = useState("4000");
   const [water, setWater] = useState("100000");
+  const [waterFeeMode, setWaterFeeMode] = useState<"per_person" | "per_m3">(
+    "per_person"
+  );
   const [service, setService] = useState("200000");
   const [effectiveFrom, setEffectiveFrom] = useState(
     new Date().toISOString().slice(0, 10)
@@ -35,6 +38,7 @@ export default function UtilityFeeEditor({
       body: JSON.stringify({
         electricityPricePerKwh: Number(electricity),
         waterPricePerPerson: Number(water),
+        waterFeeMode,
         serviceFeePerMonth: Number(service),
         effectiveFrom,
       }),
@@ -64,7 +68,10 @@ export default function UtilityFeeEditor({
               <tr key={v.id}>
                 <td className="py-1">{v.effectiveFrom}</td>
                 <td className="py-1">{formatVnd(v.electricityPricePerKwh)}/kWh</td>
-                <td className="py-1">{formatVnd(v.waterPricePerPerson)}/người</td>
+                <td className="py-1">
+                  {formatVnd(v.waterPricePerPerson)}/
+                  {v.waterFeeMode === "per_m3" ? "m³" : "người"}
+                </td>
                 <td className="py-1">{formatVnd(v.serviceFeePerMonth)}/tháng</td>
               </tr>
             ))}
@@ -83,13 +90,28 @@ export default function UtilityFeeEditor({
           />
         </label>
         <label className="flex flex-col gap-1 text-sm">
-          <span className="text-slate-600">Nước (đ/người)</span>
-          <input
-            type="number"
-            value={water}
-            onChange={(e) => setWater(e.target.value)}
-            className="rounded-lg border border-slate-300 px-2 py-1.5"
-          />
+          <span className="text-slate-600">
+            Nước (đ/{waterFeeMode === "per_m3" ? "m³" : "người"})
+          </span>
+          <div className="flex gap-2">
+            <input
+              type="number"
+              value={water}
+              onChange={(e) => setWater(e.target.value)}
+              className="w-full rounded-lg border border-slate-300 px-2 py-1.5"
+            />
+            <select
+              value={waterFeeMode}
+              onChange={(e) =>
+                setWaterFeeMode(e.target.value as "per_person" | "per_m3")
+              }
+              className="rounded-lg border border-slate-300 px-1 py-1.5 text-xs"
+              title="Cách tính tiền nước"
+            >
+              <option value="per_person">/người</option>
+              <option value="per_m3">/m³</option>
+            </select>
+          </div>
         </label>
         <label className="flex flex-col gap-1 text-sm">
           <span className="text-slate-600">Phí dịch vụ (đ/tháng)</span>
