@@ -29,6 +29,9 @@ export default async function AdminDashboardLayout({
             <Link href="/admin/rooms/new" className="text-slate-500 hover:text-slate-800">
               + Phòng mới
             </Link>
+            <Link href="/admin/amenities" className="text-slate-500 hover:text-slate-800">
+              Danh mục tiện ích
+            </Link>
             <Link href="/" className="text-slate-500 hover:text-slate-800">
               Xem trang công khai
             </Link>

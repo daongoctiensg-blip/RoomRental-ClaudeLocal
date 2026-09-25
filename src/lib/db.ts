@@ -23,6 +23,7 @@ import type {
 import { getPool } from "@/lib/mysqlPool";
 import { extractSearchKeywords, matchesKeywords } from "@/lib/search";
 import { NEARBY_RADIUS_KM, geocodeAddress, haversineDistanceKm } from "@/lib/geocode";
+import { canonicalizeAmenityNames } from "@/lib/amenityCatalog";
 
 // ---------------------------------------------------------------------------
 // MySQL-backed data layer. Every function here returns/accepts the exact
@@ -333,6 +334,9 @@ export async function createProperty(
   const pool = getPool();
   const property: Property = {
     ...input,
+    // Round 12: every amenity name is canonicalized against the amenity
+    // catalog (and any new name is added to it) — see amenityCatalog.ts.
+    amenitiesShared: await canonicalizeAmenityNames(input.amenitiesShared),
     lat: input.lat ?? geocoded?.lat,
     lng: input.lng ?? geocoded?.lng,
     id: `prop-${randomUUID()}`,
@@ -449,6 +453,10 @@ export async function updateProperty(
       ...existingForMerge.saleBonusPolicy,
       ...input.saleBonusPolicy,
     };
+  }
+
+  if ("amenitiesShared" in mergedInput) {
+    mergedInput.amenitiesShared = await canonicalizeAmenityNames(mergedInput.amenitiesShared);
   }
 
   const validationError = validatePropertyMoneyFields(mergedInput);
@@ -829,8 +837,13 @@ export async function recordRoomView(id: string): Promise<void> {
 
 export async function createRoom(input: RoomInput): Promise<Room> {
   const pool = getPool();
+  // Round 12: an empty override means "use the property's amenities" —
+  // stored as NULL, never as an empty list (which would read as "this room
+  // has no amenities at all").
+  const override = await canonicalizeAmenityNames(input.amenitiesOverride);
   const room: Room = {
     ...input,
+    amenitiesOverride: override.length > 0 ? override : undefined,
     id: `room-${randomUUID()}`,
     // viewCount is a real counter, never caller-supplied — always starts at
     // 0 for a brand-new room regardless of what's in `input`.
@@ -903,6 +916,11 @@ export async function updateRoom(
   const sets: string[] = [];
   const values: unknown[] = [];
 
+  if ("amenitiesOverride" in input) {
+    const override = await canonicalizeAmenityNames(input.amenitiesOverride);
+    input = { ...input, amenitiesOverride: override.length > 0 ? override : undefined };
+  }
+
   for (const [key, column] of Object.entries(ROOM_COLUMN_MAP)) {
     if (key in input) {
       const v = (input as Record<string, unknown>)[key];
@@ -914,7 +932,9 @@ export async function updateRoom(
     if (key in input) {
       const v = (input as Record<string, unknown>)[key];
       sets.push(`${column} = ?`);
-      values.push(v === undefined ? null : JSON.stringify(v));
+      // null (sent by the edit form to clear a field) is stored as SQL NULL,
+      // not as the JSON text "null".
+      values.push(v === undefined || v === null ? null : JSON.stringify(v));
     }
   }
   if (sets.length === 0) {

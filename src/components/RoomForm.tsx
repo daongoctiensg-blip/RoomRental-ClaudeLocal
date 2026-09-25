@@ -3,6 +3,7 @@
 import { useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { apiUrl } from "@/lib/basePath";
+import AmenityPicker from "@/components/AmenityPicker";
 import type { Property, Room, SubUnit } from "@/types";
 
 function splitLines(value: string): string[] {
@@ -36,8 +37,8 @@ export default function RoomForm({
   const [description, setDescription] = useState(room?.description ?? "");
   const [internalNotes, setInternalNotes] = useState(room?.internalNotes ?? "");
   const [images, setImages] = useState((room?.images ?? []).join("\n"));
-  const [amenitiesOverride, setAmenitiesOverride] = useState(
-    (room?.amenitiesOverride ?? []).join("\n")
+  const [amenitiesOverride, setAmenitiesOverride] = useState<string[]>(
+    room?.amenitiesOverride ?? []
   );
   const [subUnits, setSubUnits] = useState<SubUnit[]>(room?.subUnits ?? []);
   const [saving, setSaving] = useState(false);
@@ -81,20 +82,22 @@ export default function RoomForm({
     const payload = {
       propertyId,
       code,
-      floor: floor || undefined,
+      // Round 12 fix: cleared fields are sent as null, not undefined —
+      // JSON.stringify drops undefined keys entirely, so clearing e.g. the
+      // description or internal notes of an EXISTING room used to be
+      // silently ignored by PUT /api/rooms/[id] (the old value stayed).
+      floor: floor || null,
       areaSqm: Number(areaSqm),
       hasBalcony,
       priceMonthly: Number(priceMonthly),
-      maxOccupancy: maxOccupancy === "" ? undefined : Number(maxOccupancy),
+      maxOccupancy: maxOccupancy === "" ? null : Number(maxOccupancy),
       status: room?.status ?? "available",
-      description: description || undefined,
-      internalNotes: internalNotes || undefined,
+      description: description || null,
+      internalNotes: internalNotes || null,
       images: splitLines(images),
-      amenitiesOverride:
-        amenitiesOverride.trim().length > 0
-          ? splitLines(amenitiesOverride)
-          : undefined,
-      subUnits: subUnits.length > 0 ? subUnits : undefined,
+      // Empty = use the property's shared amenities (stored as NULL).
+      amenitiesOverride: amenitiesOverride.length > 0 ? amenitiesOverride : null,
+      subUnits: subUnits.length > 0 ? subUnits : null,
       isActive: room?.isActive ?? true,
     };
 
@@ -261,15 +264,12 @@ export default function RoomForm({
         </label>
         <label className="mt-4 flex flex-col gap-1">
           <span className="text-sm font-medium text-slate-700">
-            Tiện ích riêng (để trống nếu dùng chung với nhà)
+            Tiện ích riêng của phòng (để trống = dùng tiện ích chung của nhà)
           </span>
-          <textarea
-            value={amenitiesOverride}
-            onChange={(e) => setAmenitiesOverride(e.target.value)}
-            rows={2}
-            className={inputClass}
-          />
         </label>
+        <div className="mt-1">
+          <AmenityPicker value={amenitiesOverride} onChange={setAmenitiesOverride} />
+        </div>
       </section>
 
       <section className="rounded-xl border-2 border-amber-200 bg-amber-50 p-5">

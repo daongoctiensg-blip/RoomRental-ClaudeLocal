@@ -125,3 +125,23 @@ CREATE TABLE IF NOT EXISTS room_documents (
   INDEX idx_documents_room_id (room_id),
   CONSTRAINT fk_documents_room FOREIGN KEY (room_id) REFERENCES rooms(id) ON DELETE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- Amenity master data ("danh mục tiện ích") — round 12. properties.
+-- amenities_shared / rooms.amenities_override keep storing amenity NAMES;
+-- this table is the canonical list those names come from (see
+-- src/lib/amenityCatalog.ts). name_key is the normalized (lowercase, no
+-- diacritics) form, UNIQUE so "Máy lạnh" and "may lanh" can never both
+-- exist. The one-time split of pre-existing free-text amenity lines into
+-- catalog items is done in scripts/migrate.ts, only on the run that first
+-- creates this table.
+CREATE TABLE IF NOT EXISTS amenities (
+  id VARCHAR(64) PRIMARY KEY,
+  name VARCHAR(255) NOT NULL,
+  name_key VARCHAR(255) NOT NULL,
+  group_key VARCHAR(32) NOT NULL DEFAULT 'other',
+  icon VARCHAR(32) NOT NULL DEFAULT 'check',
+  is_popular TINYINT(1) NOT NULL DEFAULT 0,
+  sort_order INT NOT NULL DEFAULT 0,
+  created_at VARCHAR(30) NOT NULL,
+  UNIQUE KEY uq_amenities_name_key (name_key)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;

@@ -5,7 +5,7 @@ import { useCallback, useTransition } from "react";
 import { ROOM_STATUSES, ROOM_STATUS_LABEL, type RoomStatus } from "@/types";
 import { PRICE_BUCKETS } from "@/lib/priceBuckets";
 import PriceRangeSlider from "@/components/PriceRangeSlider";
-import { COMMON_AMENITY_KEYWORDS } from "@/lib/amenityKeywords";
+import { AmenityIcon } from "@/components/AmenityIcon";
 
 /**
  * Secondary refinement filters (status, price bucket). The primary search
@@ -13,7 +13,13 @@ import { COMMON_AMENITY_KEYWORDS } from "@/lib/amenityKeywords";
  * of the page instead — this bar sits alongside the results as a narrower
  * "refine further" panel.
  */
-export default function FilterBar() {
+export default function FilterBar({
+  popularAmenities,
+}: {
+  /** Round 12: the checkbox list is the amenity catalog's "phổ biến"
+   * items (admin-controlled), no longer a hardcoded keyword list. */
+  popularAmenities: { name: string; icon: string }[];
+}) {
   const router = useRouter();
   const pathname = usePathname();
   const searchParams = useSearchParams();
@@ -112,11 +118,9 @@ export default function FilterBar() {
     });
   };
 
-  // "Tiện ích phổ biến" — round 10, §12. Free-text keyword match against
-  // amenitiesShared/amenitiesOverride, applied in page.tsx after listRooms()
-  // returns (not a SQL filter) — see src/lib/amenityKeywords.ts. No schema
-  // change: the checkbox list is a fixed set of common keywords, not a real
-  // column.
+  // "Tiện ích phổ biến" — applied in page.tsx after listRooms() returns (not
+  // a SQL filter). Round 12: exact (case/diacritics-insensitive) match
+  // against catalog names — see roomHasAllAmenities in src/lib/amenities.ts.
   const selectedAmenities = new Set(
     (searchParams.get("amenities") ?? "").split(",").filter(Boolean)
   );
@@ -226,18 +230,19 @@ export default function FilterBar() {
           Tiện ích phổ biến
         </h3>
         <div className="flex flex-col gap-2">
-          {COMMON_AMENITY_KEYWORDS.map((keyword) => (
+          {popularAmenities.map(({ name, icon }) => (
             <label
-              key={keyword}
+              key={name}
               className="flex items-center gap-2 text-sm text-slate-600"
             >
               <input
                 type="checkbox"
-                checked={selectedAmenities.has(keyword)}
-                onChange={() => toggleAmenity(keyword)}
+                checked={selectedAmenities.has(name)}
+                onChange={() => toggleAmenity(name)}
                 className="h-4 w-4 rounded border-slate-300 text-[color:var(--color-accent)] focus:ring-[color:var(--color-accent)]"
               />
-              {keyword}
+              <AmenityIcon icon={icon} className="h-4 w-4 text-slate-400" />
+              {name}
             </label>
           ))}
         </div>

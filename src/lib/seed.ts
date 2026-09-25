@@ -22,8 +22,17 @@ export function buildSeedDatabase(): Database {
         contactPhone: "0768654627",
         landlordName: "Chị Hoa (chủ nhà Nam Long)",
         landlordContactPhone: "0909000000",
+        // Round 12: one catalog item per entry (was one free-text line
+        // "Đầy đủ nội thất: tủ lạnh, máy lạnh, ..." before the amenity
+        // catalog existed).
         amenitiesShared: [
-          "Đầy đủ nội thất: tủ lạnh, máy lạnh, máy giặt, giường, bếp, tủ quần áo, bàn ghế",
+          "Tủ lạnh",
+          "Máy lạnh",
+          "Máy giặt",
+          "Giường",
+          "Bếp",
+          "Tủ quần áo",
+          "Bàn ghế",
           "WC riêng",
           "Miễn phí gửi xe",
         ],

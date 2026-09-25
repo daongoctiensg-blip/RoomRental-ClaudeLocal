@@ -10,7 +10,9 @@ import SortControl from "@/components/SortControl";
 import LogoutButton from "@/components/LogoutButton";
 import type { RoomStatus } from "@/types";
 import { ROOM_STATUSES } from "@/types";
-import { roomMatchesAllAmenityKeywords } from "@/lib/amenityKeywords";
+import { roomHasAllAmenities } from "@/lib/amenities";
+import { listAmenities } from "@/lib/amenityCatalog";
+import SavedRoomsLink from "@/components/SavedRoomsLink";
 
 export const dynamic = "force-dynamic";
 
@@ -86,26 +88,39 @@ export default async function HomePage({
   // already understands.
   const propertyId = firstValue(sp.propertyId);
 
-  const [allRooms, properties, admin] = await Promise.all([
-    listRooms({
-      status: statuses,
-      city,
-      ward,
-      district,
-      address,
-      priceMin,
-      priceMax,
-      occupancy,
-      propertyId,
-      sortBy,
-    }),
+  // "Đã lưu" — round 12. `saved=id1,id2` comes from the visitor's own
+  // browser (SavedRoomsLink). It shows exactly those rooms in any status —
+  // so a saved room that has since been rented shows up as "Đã cho thuê"
+  // instead of silently disappearing — and ignores the other filters.
+  const savedParam = firstValue(sp.saved);
+  const savedIds = savedParam
+    ? new Set(savedParam.split(",").map((s) => s.trim()).filter(Boolean).slice(0, 100))
+    : null;
+
+  const [listed, properties, admin, catalog] = await Promise.all([
+    savedIds
+      ? listRooms({ sortBy })
+      : listRooms({
+          status: statuses,
+          city,
+          ward,
+          district,
+          address,
+          priceMin,
+          priceMax,
+          occupancy,
+          propertyId,
+          sortBy,
+        }),
     listProperties(),
     isAdminSession(),
+    listAmenities(),
   ]);
+  const allRooms = savedIds ? listed.filter((r) => savedIds.has(r.id)) : listed;
 
-  // "Tiện ích phổ biến" — round 10, §12. Keyword match applied here, after
-  // listRooms(), rather than as a SQL clause — see src/lib/amenityKeywords.ts
-  // for why (no schema change: amenities are still just free text).
+  // "Tiện ích phổ biến" — applied here, after listRooms(), rather than as a
+  // SQL clause (amenity names live in a JSON column). Round 12: exact match
+  // against amenity-catalog names, see src/lib/amenities.ts.
   const amenitiesParam = firstValue(sp.amenities);
   const selectedAmenities = amenitiesParam
     ? amenitiesParam.split(",").filter(Boolean)
@@ -113,7 +128,7 @@ export default async function HomePage({
   const rooms =
     selectedAmenities.length > 0
       ? allRooms.filter((r) =>
-          roomMatchesAllAmenityKeywords(
+          roomHasAllAmenities(
             r.amenitiesOverride ?? r.property.amenitiesShared,
             selectedAmenities
           )
@@ -149,6 +164,8 @@ export default async function HomePage({
           <div className="text-xl font-bold tracking-tight text-[color:var(--color-accent-dark)]">
             Phòng Cho Thuê
           </div>
+          <div className="flex items-center gap-3">
+          <SavedRoomsLink />
           {admin ? (
             <div className="flex items-center gap-3">
               <span className="rounded-full bg-amber-100 px-2.5 py-1 text-xs font-medium text-amber-800">
@@ -170,6 +187,7 @@ export default async function HomePage({
               Quản trị
             </Link>
           )}
+          </div>
         </div>
       </header>
 
@@ -190,17 +208,30 @@ export default async function HomePage({
 
         <div className="grid grid-cols-1 gap-6 lg:grid-cols-[240px_1fr]">
           <aside className="lg:sticky lg:top-6 lg:self-start">
-            <FilterBar />
+            <FilterBar
+              popularAmenities={catalog
+                .filter((a) => a.isPopular)
+                .map((a) => ({ name: a.name, icon: a.icon }))}
+            />
           </aside>
 
           <div className="flex flex-col gap-4">
             <div className="flex flex-wrap items-end justify-between gap-3 border-b border-slate-200 pb-3">
               <div>
                 <h1 className="text-2xl font-bold text-slate-900">
-                  Tìm thấy {rooms.length} phòng
+                  {savedIds ? `Phòng đã lưu (${rooms.length})` : `Tìm thấy ${rooms.length} phòng`}
                 </h1>
                 <p className="text-sm text-slate-500">
-                  Xem danh sách phòng còn trống, lọc theo địa chỉ, trạng thái và giá thuê.
+                  {savedIds ? (
+                    <>
+                      Các phòng anh/chị đã bấm ♡ Lưu trên máy này.{" "}
+                      <Link href="/" className="font-medium text-[color:var(--color-accent)] hover:underline">
+                        ← Quay lại tất cả phòng
+                      </Link>
+                    </>
+                  ) : (
+                    "Xem danh sách phòng còn trống, lọc theo địa chỉ, trạng thái và giá thuê."
+                  )}
                 </p>
               </div>
               <SortControl />
@@ -208,11 +239,13 @@ export default async function HomePage({
 
             {rooms.length === 0 ? (
               <div className="rounded-xl bg-white p-8 text-center text-slate-500 shadow-sm ring-1 ring-black/5">
-                Không tìm thấy phòng phù hợp với bộ lọc hiện tại.
+                {savedIds
+                  ? "Các phòng đã lưu không còn hiển thị (có thể đã bị gỡ tin)."
+                  : "Không tìm thấy phòng phù hợp với bộ lọc hiện tại."}
               </div>
             ) : (
               rooms.map((room) => (
-                <RoomCard key={room.id} room={room} admin={admin} />
+                <RoomCard key={room.id} room={room} admin={admin} catalog={catalog} />
               ))
             )}
           </div>

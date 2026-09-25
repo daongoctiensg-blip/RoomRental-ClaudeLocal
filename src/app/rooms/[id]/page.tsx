@@ -1,12 +1,26 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
-import { getRoom, getCurrentUtilityFee, toPublicRoom, recordRoomView } from "@/lib/db";
+import { MapPin, Phone, MessageCircle, FileDown, Maximize2, DoorOpen, Users, Layers } from "lucide-react";
+import {
+  getRoom,
+  getCurrentUtilityFee,
+  listRooms,
+  toPublicRoom,
+  recordRoomView,
+} from "@/lib/db";
 import { isAdminSession } from "@/lib/apiAuth";
+import { listAmenities } from "@/lib/amenityCatalog";
+import { groupAmenities, resolveAmenities } from "@/lib/amenities";
+import { calculateMoveInCost } from "@/lib/moveInCost";
+import { findNearbyRooms } from "@/lib/nearbyRooms";
 import StatusBadge from "@/components/StatusBadge";
 import DepositCountdown from "@/components/DepositCountdown";
 import ShareButtons from "@/components/ShareButtons";
 import PhotoGallery from "@/components/PhotoGallery";
-import RoomDetailTabs from "@/components/RoomDetailTabs";
+import RoomDetailTabs, { RoomTabLink } from "@/components/RoomDetailTabs";
+import SaveRoomButton from "@/components/SaveRoomButton";
+import NearbyRooms from "@/components/NearbyRooms";
+import { AmenityIcon } from "@/components/AmenityIcon";
 import Fact from "@/components/Fact";
 import { formatVnd, telHref, zaloHref } from "@/lib/format";
 import type { Property, PublicProperty, PublicRoom, RoomWithProperty } from "@/types";
@@ -42,98 +56,163 @@ export default async function RoomDetailPage({
   // Customer gets the sanitized shape (no commission, no landlord contact,
   // no "lì xì", no cancellation split) — same as always. A logged-in admin
   // gets the full internal data instead, shown in a clearly separated panel
-  // below (see the "Nội bộ" section) so the two are never visually mixed up.
+  // (see the "Nội bộ" section) so the two are never visually mixed up.
   const room: PublicRoom | RoomWithProperty = admin ? fullRoom : toPublicRoom(fullRoom);
   const property: Property | PublicProperty = room.property;
-  const amenities = room.amenitiesOverride ?? property.amenitiesShared;
   const fee = getCurrentUtilityFee(property);
-  const photos = room.images.length > 0 ? room.images : [undefined];
 
-  return (
-    <div className="flex min-h-screen flex-col">
-      <header className="border-b border-black/5 bg-white">
-        <div className="mx-auto flex max-w-5xl items-center gap-4 px-4 py-4">
-          <Link
-            href="/"
-            className="text-sm font-medium text-[color:var(--color-accent)] hover:underline"
-          >
-            ← Danh sách phòng
-          </Link>
+  // Round 12 data: amenity catalog (icons/groups), nearby rooms, move-in
+  // cost. listRooms() with no admin option only returns rooms on active
+  // properties; findNearbyRooms() then keeps only "available" ones and maps
+  // them to a public-only summary shape before anything reaches the page.
+  const [catalog, availableRooms] = await Promise.all([
+    listAmenities(),
+    listRooms({ status: ["available"] }),
+  ]);
+  const amenities = resolveAmenities(room.amenitiesOverride ?? property.amenitiesShared, catalog);
+  const amenityGroups = groupAmenities(amenities);
+  // Highlights: "phổ biến" items first (same ones as the homepage filter),
+  // then the rest, in the order the admin picked them.
+  const highlights = [
+    ...amenities.filter((a) => a.isPopular),
+    ...amenities.filter((a) => !a.isPopular),
+  ];
+  const moveIn = calculateMoveInCost(room.priceMonthly, property.depositPolicy);
+  const nearby = findNearbyRooms(fullRoom, availableRooms);
+
+  const summary = [
+    { icon: Maximize2, text: `${room.areaSqm} m²` },
+    room.floor ? { icon: Layers, text: room.floor } : null,
+    room.hasBalcony ? { icon: DoorOpen, text: "Ban công" } : null,
+    room.maxOccupancy ? { icon: Users, text: `Tối đa ${room.maxOccupancy} người` } : null,
+  ].filter((x): x is { icon: typeof Maximize2; text: string } => x !== null);
+
+  // Icon strip under the photos (trip.com's "Vị trí lý tưởng · Tự nhận
+  // phòng · Wi-Fi miễn phí…" row): real facts only.
+  const strip = [
+    ...(room.hasBalcony ? [{ icon: "sun", name: "Ban công riêng" }] : []),
+    ...highlights.slice(0, room.hasBalcony ? 5 : 6).map((a) => ({ icon: a.icon, name: a.name })),
+  ];
+
+  const photoSidePanel = (
+    <div className="flex flex-col gap-4 text-sm">
+      <div>
+        <h3 className="text-lg font-bold text-slate-900">Phòng {room.code}</h3>
+        <p className="text-slate-500">{property.name}</p>
+      </div>
+      <ul className="flex flex-col gap-1.5 text-slate-700">
+        {summary.map((s) => (
+          <li key={s.text} className="flex items-center gap-2">
+            <s.icon className="h-4 w-4 text-slate-400" aria-hidden />
+            {s.text}
+          </li>
+        ))}
+      </ul>
+      {amenities.length > 0 ? (
+        <div>
+          <p className="mb-1.5 text-xs font-semibold uppercase tracking-wide text-slate-400">Tiện nghi</p>
+          <ul className="grid grid-cols-2 gap-1.5 text-slate-700">
+            {highlights.slice(0, 10).map((a) => (
+              <li key={a.name} className="flex items-center gap-1.5">
+                <AmenityIcon icon={a.icon} className="h-3.5 w-3.5 flex-none text-slate-400" />
+                <span className="truncate">{a.name}</span>
+              </li>
+            ))}
+          </ul>
         </div>
-      </header>
-
-      <main className="mx-auto w-full max-w-5xl flex-1 px-4 py-6">
-        <div className="mb-4 flex flex-wrap items-start justify-between gap-3">
-          <div>
-            <h1 className="text-2xl font-bold text-slate-900">
-              Phòng {room.code}
-              {room.floor ? (
-                <span className="ml-2 text-base font-normal text-slate-500">
-                  · {room.floor}
-                </span>
-              ) : null}
-            </h1>
-            <p className="text-sm text-slate-500">{property.name}</p>
-          </div>
-          <StatusBadge status={room.status} />
+      ) : null}
+      <div className="mt-auto border-t border-slate-100 pt-4">
+        <div className="text-2xl font-bold text-[color:var(--color-accent-dark)]">
+          {formatVnd(room.priceMonthly)}
+          <span className="text-xs font-normal text-slate-500">/tháng</span>
         </div>
+        <a
+          href={telHref(property.contactPhone)}
+          className="mt-3 flex w-full items-center justify-center gap-2 rounded-lg bg-[color:var(--color-accent)] px-4 py-2.5 font-semibold text-white hover:bg-[color:var(--color-accent-dark)]"
+        >
+          <Phone className="h-4 w-4" aria-hidden /> Gọi {property.contactPhone}
+        </a>
+      </div>
+    </div>
+  );
 
-        {property.customerPromotion ? (
-          <div className="mb-4 rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900">
-            <span className="font-semibold">Khuyến mãi: </span>
-            {property.customerPromotion}
+  const sidebar = (
+    <>
+      <div className="overflow-hidden rounded-2xl bg-white shadow-md ring-1 ring-black/5">
+        <div className="bg-[color:var(--color-accent-light)] px-5 py-2.5 text-sm font-semibold text-[color:var(--color-accent-dark)]">
+          Giá thuê hàng tháng
+        </div>
+        <div className="p-5">
+          <div className="text-3xl font-bold text-[color:var(--color-accent-dark)]">
+            {formatVnd(room.priceMonthly)}
+            <span className="text-sm font-normal text-slate-500">/tháng</span>
           </div>
-        ) : null}
+          <p className="mt-1 text-xs text-slate-500">Chưa gồm điện, nước, phí dịch vụ.</p>
 
-        <PhotoGallery photos={photos} roomCode={room.code} />
-
-        <div className="mt-6 grid grid-cols-1 gap-6 lg:grid-cols-[1fr_320px]">
-          <div className="flex flex-col gap-5">
-            <RoomDetailTabs room={room} property={property} amenities={amenities} fee={fee} />
+          <div className="mt-4 rounded-xl bg-slate-50 p-3">
+            <p className="font-semibold text-slate-800">Phòng {room.code}</p>
+            <ul className="mt-1.5 flex flex-col gap-1 text-sm text-slate-600">
+              {summary.map((s) => (
+                <li key={s.text} className="flex items-center gap-2">
+                  <s.icon className="h-4 w-4 text-slate-400" aria-hidden />
+                  {s.text}
+                </li>
+              ))}
+            </ul>
           </div>
 
-          <aside className="flex flex-col gap-4 lg:sticky lg:top-6 lg:self-start">
-            <div className="rounded-2xl bg-white p-5 shadow-md ring-1 ring-black/5">
-              <div className="text-3xl font-bold text-[color:var(--color-accent-dark)]">
-                {formatVnd(room.priceMonthly)}
-                <span className="text-sm font-normal text-slate-500">
-                  /tháng
-                </span>
-              </div>
-              <p className="mt-1 text-xs text-slate-500">
-                Chưa gồm điện, nước, phí dịch vụ.
-              </p>
-              <div className="mt-4 flex flex-col gap-2">
-                <a
-                  href={telHref(property.contactPhone)}
-                  className="w-full rounded-lg bg-[color:var(--color-accent)] px-4 py-2.5 text-center text-sm font-semibold text-white hover:bg-[color:var(--color-accent-dark)]"
-                >
-                  Gọi {property.contactPhone}
-                </a>
-                <a
-                  href={zaloHref(property.contactPhone)}
-                  target="_blank"
-                  rel="noreferrer"
-                  className="w-full rounded-lg border border-slate-300 px-4 py-2.5 text-center text-sm font-semibold text-slate-700 hover:bg-slate-50"
-                >
-                  Nhắn Zalo
-                </a>
-                <Link
-                  href={`/rooms/${room.id}/export`}
-                  target="_blank"
-                  className="w-full rounded-lg border border-slate-300 px-4 py-2.5 text-center text-sm font-semibold text-slate-700 hover:bg-slate-50"
-                >
-                  Xuất PDF
-                </Link>
-              </div>
-              <ShareButtons
-                title={`Phòng ${room.code} · ${property.name}`}
-                phone={property.contactPhone}
-              />
-              <p className="mt-3 text-center text-xs text-slate-400">
-                Liên hệ để hẹn xem phòng trực tiếp
-              </p>
+          {moveIn.totalAtSigning > 0 ? (
+            <div className="mt-3 flex items-center justify-between gap-2 text-sm">
+              <span className="text-slate-600">
+                Khi ký HĐ cần:{" "}
+                <strong className="text-slate-900">{formatVnd(moveIn.totalAtSigning)}</strong>
+              </span>
+              <RoomTabLink
+                tab="policy"
+                className="flex-none text-xs font-medium text-[color:var(--color-accent)] hover:underline"
+              >
+                Xem chi tiết
+              </RoomTabLink>
             </div>
+          ) : null}
+
+          <div className="mt-4 flex flex-col gap-2">
+            <a
+              href={telHref(property.contactPhone)}
+              className="flex w-full items-center justify-center gap-2 rounded-lg bg-[color:var(--color-accent)] px-4 py-3 text-center text-sm font-semibold text-white shadow-sm hover:bg-[color:var(--color-accent-dark)]"
+            >
+              <Phone className="h-4 w-4" aria-hidden />
+              Gọi {property.contactPhone}
+            </a>
+            <div className="grid grid-cols-2 gap-2">
+              <a
+                href={zaloHref(property.contactPhone)}
+                target="_blank"
+                rel="noreferrer"
+                className="flex items-center justify-center gap-1.5 rounded-lg border border-slate-300 px-3 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-50"
+              >
+                <MessageCircle className="h-4 w-4" aria-hidden />
+                Nhắn Zalo
+              </a>
+              <Link
+                href={`/rooms/${room.id}/export`}
+                target="_blank"
+                className="flex items-center justify-center gap-1.5 rounded-lg border border-slate-300 px-3 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-50"
+              >
+                <FileDown className="h-4 w-4" aria-hidden />
+                Xuất PDF
+              </Link>
+            </div>
+          </div>
+          <ShareButtons
+            title={`Phòng ${room.code} · ${property.name}`}
+            phone={property.contactPhone}
+          />
+          <p className="mt-3 text-center text-xs text-slate-400">
+            Liên hệ để hẹn xem phòng trực tiếp
+          </p>
+        </div>
+      </div>
 
             {admin ? (
               <section className="rounded-xl border-2 border-amber-200 bg-amber-50 p-5">
@@ -280,8 +359,82 @@ export default async function RoomDetailPage({
                 </div>
               </section>
             ) : null}
-          </aside>
+    </>
+  );
+
+  return (
+    <div className="flex min-h-screen flex-col">
+      <header className="border-b border-black/5 bg-white">
+        <div className="mx-auto flex max-w-6xl items-center gap-4 px-4 py-4">
+          <Link
+            href="/"
+            className="text-sm font-medium text-[color:var(--color-accent)] hover:underline"
+          >
+            ← Danh sách phòng
+          </Link>
         </div>
+      </header>
+
+      <main className="mx-auto w-full max-w-6xl flex-1 px-4 py-6">
+        <div className="mb-4 flex flex-wrap items-start justify-between gap-3">
+          <div className="min-w-0">
+            <div className="flex flex-wrap items-center gap-2">
+              <h1 className="text-2xl font-bold text-slate-900">
+                Phòng {room.code}
+                {room.floor ? (
+                  <span className="ml-2 text-base font-normal text-slate-500">· {room.floor}</span>
+                ) : null}
+              </h1>
+              <StatusBadge status={room.status} />
+            </div>
+            <p className="text-sm font-medium text-slate-600">{property.name}</p>
+            <p className="mt-0.5 flex flex-wrap items-center gap-1 text-sm text-slate-500">
+              <MapPin className="h-4 w-4 flex-none text-slate-400" aria-hidden />
+              {property.addressNew}
+              <RoomTabLink
+                tab="location"
+                className="ml-1 font-medium text-[color:var(--color-accent)] hover:underline"
+              >
+                Xem vị trí
+              </RoomTabLink>
+            </p>
+          </div>
+          <SaveRoomButton roomId={room.id} variant="inline" />
+        </div>
+
+        {property.customerPromotion ? (
+          <div className="mb-4 rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900">
+            <span className="font-semibold">Khuyến mãi: </span>
+            {property.customerPromotion}
+          </div>
+        ) : null}
+
+        <PhotoGallery photos={room.images} roomCode={room.code} sidePanel={photoSidePanel} />
+
+        {strip.length > 0 ? (
+          <ul className="mt-4 grid grid-cols-2 gap-3 rounded-2xl bg-white p-4 shadow-sm ring-1 ring-black/5 sm:grid-cols-3 lg:grid-cols-6">
+            {strip.map((s) => (
+              <li key={s.name} className="flex flex-col items-center gap-1.5 text-center text-xs text-slate-600">
+                <AmenityIcon icon={s.icon} className="h-6 w-6 text-slate-500" />
+                {s.name}
+              </li>
+            ))}
+          </ul>
+        ) : null}
+
+        <div className="mt-4">
+          <RoomDetailTabs
+            room={room}
+            property={property}
+            fee={fee}
+            amenityGroups={amenityGroups}
+            highlights={highlights}
+            moveIn={moveIn}
+            sidebar={sidebar}
+          />
+        </div>
+
+        <NearbyRooms rooms={nearby} />
       </main>
     </div>
   );

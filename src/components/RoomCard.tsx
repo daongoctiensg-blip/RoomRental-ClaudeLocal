@@ -4,8 +4,9 @@ import type { RoomWithProperty } from "@/types";
 import StatusBadge from "@/components/StatusBadge";
 import RoomCardPhotoCarousel from "@/components/RoomCardPhotoCarousel";
 import { AmenityIcon } from "@/components/AmenityIcon";
+import SaveRoomButton from "@/components/SaveRoomButton";
 import { formatVnd, telHref, zaloHref } from "@/lib/format";
-import { COMMON_AMENITY_KEYWORDS, amenityListMatches } from "@/lib/amenityKeywords";
+import { type Amenity, normalizeAmenityName } from "@/lib/amenities";
 
 // "Mới đăng" quick tag — round 11. A room created within this many days of
 // today gets a small "new listing" badge on its card, matching what most
@@ -29,20 +30,25 @@ function isBonusActiveToday(validFrom: string, validTo: string): boolean {
 export default function RoomCard({
   room,
   admin = false,
+  catalog,
 }: {
   room: RoomWithProperty;
   admin?: boolean;
+  /** Amenity catalog (round 12) — source of each tag's icon and of which
+   * amenities count as "phổ biến". */
+  catalog: Amenity[];
 }) {
   const address = room.property.addressNew;
   const amenities = room.amenitiesOverride ?? room.property.amenitiesShared;
-  // Quick tags — round 11: at-a-glance amenity badges so a customer doesn't
-  // have to open every room to see if it has A/C, a washing machine, etc.
-  // Matched against the same fixed keyword list the "Tiện ích phổ biến"
-  // filter uses (src/lib/amenityKeywords.ts), capped so the card doesn't get
-  // cluttered.
-  const quickAmenityTags = COMMON_AMENITY_KEYWORDS.filter((k) =>
-    amenityListMatches(amenities, k)
-  ).slice(0, 3);
+  // Quick tags — at-a-glance amenity badges so a customer doesn't have to
+  // open every room to see if it has A/C, a washing machine, etc. Round 12:
+  // driven by the amenity catalog — only items the admin marked "phổ
+  // biến", in catalog order, with the catalog's icon. Capped at 3 so the
+  // card doesn't get cluttered.
+  const roomKeys = new Set(amenities.map(normalizeAmenityName));
+  const quickAmenityTags = catalog
+    .filter((a) => a.isPopular && roomKeys.has(normalizeAmenityName(a.name)))
+    .slice(0, 3);
 
   return (
     <article className="flex flex-col overflow-hidden rounded-2xl bg-white shadow-sm ring-1 ring-black/5 transition-shadow duration-200 hover:shadow-lg sm:flex-row">
@@ -54,6 +60,9 @@ export default function RoomCard({
         />
         <div className="pointer-events-none absolute left-3 top-3">
           <StatusBadge status={room.status} />
+        </div>
+        <div className="absolute right-3 top-3">
+          <SaveRoomButton roomId={room.id} />
         </div>
       </div>
 
@@ -94,11 +103,11 @@ export default function RoomCard({
           ) : null}
           {quickAmenityTags.map((tag) => (
             <span
-              key={tag}
+              key={tag.id}
               className="inline-flex items-center gap-1 rounded-md bg-sky-50 px-2.5 py-1 text-sky-700"
             >
-              <AmenityIcon keyword={tag} className="h-3.5 w-3.5" />
-              {tag}
+              <AmenityIcon icon={tag.icon} className="h-3.5 w-3.5" />
+              {tag.name}
             </span>
           ))}
           {room.viewCount > 0 ? (
@@ -109,35 +118,41 @@ export default function RoomCard({
           ) : null}
         </div>
 
+        {/* Price + CTAs — round 11 trip.com-style refresh: "Xem chi tiết" is
+            now the prominent primary button (matching trip.com's big blue
+            "Xem Phòng Trống"), leading straight to the room's own detail
+            page; Gọi ngay/Zalo stay as a smaller secondary row underneath
+            for the customer who wants to skip straight to contacting,
+            rather than being replaced. */}
         <div className="mt-auto flex flex-wrap items-end justify-between gap-3 border-t border-slate-100 pt-3">
-          <div>
-            <div className="text-3xl font-bold text-[color:var(--color-accent-dark)]">
-              {formatVnd(room.priceMonthly)}
-              <span className="text-sm font-normal text-slate-500">/tháng</span>
-            </div>
+          <div className="text-3xl font-bold text-[color:var(--color-accent-dark)]">
+            {formatVnd(room.priceMonthly)}
+            <span className="text-sm font-normal text-slate-500">/tháng</span>
+          </div>
+          <div className="flex flex-col items-stretch gap-1.5 sm:items-end">
             <Link
               href={`/rooms/${room.id}`}
-              className="inline-flex items-center gap-1 text-sm font-medium text-[color:var(--color-accent)] hover:underline"
+              className="inline-flex items-center justify-center gap-1.5 rounded-lg bg-[color:var(--color-accent)] px-4 py-2 text-sm font-semibold text-white shadow-sm hover:bg-[color:var(--color-accent-dark)]"
             >
               Xem chi tiết
-              <ArrowRight className="h-3.5 w-3.5" aria-hidden />
+              <ArrowRight className="h-4 w-4" aria-hidden />
             </Link>
-          </div>
-          <div className="flex gap-2">
-            <a
-              href={telHref(room.property.contactPhone)}
-              className="rounded-lg bg-[color:var(--color-accent)] px-3 py-1.5 text-sm font-medium text-white hover:bg-[color:var(--color-accent-dark)]"
-            >
-              Gọi ngay
-            </a>
-            <a
-              href={zaloHref(room.property.contactPhone)}
-              target="_blank"
-              rel="noreferrer"
-              className="rounded-lg border border-slate-300 px-3 py-1.5 text-sm font-medium text-slate-700 hover:bg-slate-50"
-            >
-              Zalo
-            </a>
+            <div className="flex gap-2">
+              <a
+                href={telHref(room.property.contactPhone)}
+                className="rounded-lg border border-slate-300 px-3 py-1 text-xs font-medium text-slate-700 hover:bg-slate-50"
+              >
+                Gọi ngay
+              </a>
+              <a
+                href={zaloHref(room.property.contactPhone)}
+                target="_blank"
+                rel="noreferrer"
+                className="rounded-lg border border-slate-300 px-3 py-1 text-xs font-medium text-slate-700 hover:bg-slate-50"
+              >
+                Zalo
+              </a>
+            </div>
           </div>
         </div>
 

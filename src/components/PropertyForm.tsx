@@ -7,6 +7,7 @@ import vnProvinces from "@/data/vn-provinces.json";
 import vnWards from "@/data/vn-wards.json";
 import vnHcmDistricts from "@/data/vn-hcm-districts.json";
 import SearchableSelect from "@/components/SearchableSelect";
+import AmenityPicker from "@/components/AmenityPicker";
 import type { CommissionTier, Property, UtilityFeeVersion } from "@/types";
 
 type FormState = {
@@ -20,7 +21,7 @@ type FormState = {
   landlordName: string;
   landlordContactPhone: string;
   landlordZalo: string;
-  amenitiesShared: string; // newline-separated in the UI
+  amenitiesShared: string[]; // picked from the amenity catalog (round 12)
   transportNotes: string; // newline-separated in the UI
   images: string; // newline-separated URLs
   holdAmount: number;
@@ -63,7 +64,7 @@ function toFormState(property?: Property): FormState {
     landlordName: property?.landlordName ?? "",
     landlordContactPhone: property?.landlordContactPhone ?? "",
     landlordZalo: property?.landlordZalo ?? "",
-    amenitiesShared: (property?.amenitiesShared ?? []).join("\n"),
+    amenitiesShared: property?.amenitiesShared ?? [],
     transportNotes: (property?.transportNotes ?? []).join("\n"),
     images: (property?.images ?? []).join("\n"),
     holdAmount: property?.depositPolicy.holdAmount ?? 2000000,
@@ -199,7 +200,7 @@ export default function PropertyForm({ property }: { property?: Property }) {
       landlordName: form.landlordName || undefined,
       landlordContactPhone: form.landlordContactPhone || undefined,
       landlordZalo: form.landlordZalo || undefined,
-      amenitiesShared: splitLines(form.amenitiesShared),
+      amenitiesShared: form.amenitiesShared,
       transportNotes: splitLines(form.transportNotes),
       images: splitLines(form.images),
       depositPolicy: {
@@ -363,16 +364,14 @@ export default function PropertyForm({ property }: { property?: Property }) {
         </Field>
       </Section>
 
-      <Section title="Tiện ích & di chuyển (mỗi dòng 1 mục)">
-        <Field label="Tiện ích chung">
-          <textarea
+      <Section title="Tiện ích & di chuyển">
+        <Field label="Tiện ích chung (chọn từ danh mục)">
+          <AmenityPicker
             value={form.amenitiesShared}
-            onChange={(e) => update("amenitiesShared", e.target.value)}
-            rows={4}
-            className={inputClass}
+            onChange={(next) => update("amenitiesShared", next)}
           />
         </Field>
-        <Field label="Di chuyển / vị trí">
+        <Field label="Di chuyển / vị trí (mỗi dòng 1 mục)">
           <textarea
             value={form.transportNotes}
             onChange={(e) => update("transportNotes", e.target.value)}

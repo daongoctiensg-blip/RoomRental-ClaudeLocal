@@ -2,6 +2,13 @@ import fs from "fs";
 import path from "path";
 import { getPool } from "@/lib/mysqlPool";
 import { buildSeedDatabase } from "@/lib/seed";
+import {
+  DEFAULT_AMENITIES,
+  guessAmenityGroup,
+  normalizeAmenityName,
+  splitLegacyAmenityLine,
+} from "@/lib/amenities";
+import { ensureAmenity } from "@/lib/amenityCatalog";
 
 // Next.js auto-loads .env for `next build`/`next start`, but a plain script
 // run via `tsx` does not — load it by hand here. getPool() only reads
@@ -182,8 +189,93 @@ async function ensureInternalNotesColumn(pool: import("mysql2/promise").Pool): P
   }
 }
 
+async function tableExists(pool: import("mysql2/promise").Pool, table: string): Promise<boolean> {
+  const [rows] = await pool.query(
+    `SELECT TABLE_NAME FROM information_schema.TABLES
+     WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = ?`,
+    [table]
+  );
+  return (rows as unknown[]).length > 0;
+}
+
+// Round 12 — amenity master data. `firstRun` is true only on the migrate run
+// that actually creates the `amenities` table (checked BEFORE schema.sql
+// runs). Only that run:
+//   1. seeds the default catalog (DEFAULT_AMENITIES), and
+//   2. splits every pre-existing free-text amenity line into individual
+//      catalog items ("Đầy đủ nội thất: tủ lạnh, máy lạnh" -> "Tủ lạnh",
+//      "Máy lạnh") and rewrites properties/rooms to use them.
+// Later runs never re-split (a name an admin deliberately saved with a comma
+// in it must not get torn apart on the next deploy). Every run, though,
+// registers any name found on a property/room that the catalog is missing —
+// a cheap, idempotent safety net keeping "every saved name exists in the
+// catalog" true even if data was written some other way.
+async function syncAmenityCatalog(
+  pool: import("mysql2/promise").Pool,
+  firstRun: boolean
+): Promise<void> {
+  if (firstRun) {
+    console.log("Seeding default amenity catalog...");
+    for (const a of DEFAULT_AMENITIES) {
+      await ensureAmenity(a.name, { group: a.group, icon: a.icon, isPopular: a.isPopular }, pool);
+    }
+  }
+
+  const toList = (v: unknown): string[] => {
+    if (v === null || v === undefined) return [];
+    const parsed = typeof v === "string" ? JSON.parse(v) : v;
+    return Array.isArray(parsed) ? parsed.filter((x): x is string => typeof x === "string") : [];
+  };
+  const canonical = async (raw: string[]): Promise<string[]> => {
+    const items = firstRun ? raw.flatMap(splitLegacyAmenityLine) : raw;
+    const out: string[] = [];
+    const seen = new Set<string>();
+    for (const item of items) {
+      const key = normalizeAmenityName(item);
+      if (!key || seen.has(key)) continue;
+      const res = await ensureAmenity(item, { group: guessAmenityGroup(item) }, pool);
+      if ("error" in res) continue;
+      seen.add(key);
+      out.push(res.amenity.name);
+    }
+    return out;
+  };
+
+  const [props] = await pool.query("SELECT id, amenities_shared FROM properties");
+  for (const r of props as { id: string; amenities_shared: unknown }[]) {
+    const before = toList(r.amenities_shared);
+    const after = await canonical(before);
+    if (JSON.stringify(before) !== JSON.stringify(after)) {
+      console.log(`  property ${r.id}: ${JSON.stringify(before)} -> ${JSON.stringify(after)}`);
+      await pool.query("UPDATE properties SET amenities_shared = ? WHERE id = ?", [
+        JSON.stringify(after),
+        r.id,
+      ]);
+    }
+  }
+  const [rooms] = await pool.query(
+    "SELECT id, amenities_override FROM rooms WHERE amenities_override IS NOT NULL"
+  );
+  for (const r of rooms as { id: string; amenities_override: unknown }[]) {
+    const before = toList(r.amenities_override);
+    const after = await canonical(before);
+    if (JSON.stringify(before) !== JSON.stringify(after)) {
+      console.log(`  room ${r.id}: ${JSON.stringify(before)} -> ${JSON.stringify(after)}`);
+      await pool.query("UPDATE rooms SET amenities_override = ? WHERE id = ?", [
+        after.length > 0 ? JSON.stringify(after) : null,
+        r.id,
+      ]);
+    }
+  }
+  console.log("Amenity catalog OK.");
+}
+
 async function main() {
   const pool = getPool();
+
+  // Must be checked before schema.sql runs — schema.sql itself creates the
+  // table (CREATE TABLE IF NOT EXISTS), after which it always "exists".
+  const amenitiesFirstRun = !(await tableExists(pool, "amenities"));
 
   const schemaPath = path.join(process.cwd(), "scripts", "schema.sql");
   const schemaSql = fs.readFileSync(schemaPath, "utf-8");
@@ -214,6 +306,7 @@ async function main() {
   const count = (rows as { n: number }[])[0].n;
   if (count > 0) {
     console.log(`properties table already has ${count} row(s) — skipping seed.`);
+    await syncAmenityCatalog(pool, amenitiesFirstRun);
     await pool.end();
     return;
   }
@@ -294,6 +387,7 @@ async function main() {
   }
 
   console.log(`Seeded ${seed.properties.length} property(ies), ${seed.rooms.length} room(s).`);
+  await syncAmenityCatalog(pool, amenitiesFirstRun);
   await pool.end();
 }
 
