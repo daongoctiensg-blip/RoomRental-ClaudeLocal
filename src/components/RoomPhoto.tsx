@@ -1,3 +1,5 @@
+import { assetUrl } from "@/lib/basePath";
+
 export default function RoomPhoto({
   src,
   alt,
@@ -13,7 +15,7 @@ export default function RoomPhoto({
     // time, so next/image's remote-pattern allowlist would need constant
     // upkeep for no real benefit here.
     // eslint-disable-next-line @next/next/no-img-element
-    return <img src={src} alt={alt} className={className} loading="lazy" />;
+    return <img src={assetUrl(src)} alt={alt} className={className} loading="lazy" />;
   }
 
   return (

@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useState } from "react";
 import RoomPhoto from "@/components/RoomPhoto";
+import { assetUrl } from "@/lib/basePath";
 
 /**
  * Photo grid + lightbox — round 11. Same visual grid as before (1 big photo
@@ -104,7 +105,7 @@ export default function PhotoGallery({
           </button>
           {/* eslint-disable-next-line @next/next/no-img-element */}
           <img
-            src={photos[openIndex]}
+            src={assetUrl(photos[openIndex])}
             alt={`Ảnh phòng ${roomCode} ${openIndex + 1}`}
             className="max-h-[85vh] max-w-full rounded-lg object-contain"
             onClick={(e) => e.stopPropagation()}

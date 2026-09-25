@@ -157,7 +157,7 @@ export default function RoomDocuments({ roomId }: { roomId: string }) {
             >
               <div>
                 <a
-                  href={doc.fileUrl}
+                  href={apiUrl(doc.fileUrl)}
                   target="_blank"
                   rel="noreferrer"
                   className="font-medium text-[color:var(--color-accent)] hover:underline"
