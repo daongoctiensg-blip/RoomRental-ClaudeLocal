@@ -1,11 +1,26 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
+import {
+  Info,
+  MapPin,
+  Wallet,
+  Maximize2,
+  DoorOpen,
+  Tag,
+  Users,
+  Eye,
+  Zap,
+  Droplets,
+  Receipt,
+  type LucideIcon,
+} from "lucide-react";
 import { getRoom, getCurrentUtilityFee, toPublicRoom, recordRoomView } from "@/lib/db";
 import { isAdminSession } from "@/lib/apiAuth";
 import StatusBadge from "@/components/StatusBadge";
 import DepositCountdown from "@/components/DepositCountdown";
 import ShareButtons from "@/components/ShareButtons";
 import PhotoGallery from "@/components/PhotoGallery";
+import AmenityGrid from "@/components/AmenityGrid";
 import { formatVnd, telHref, zaloHref } from "@/lib/format";
 import type { Property, PublicProperty, PublicRoom, RoomWithProperty } from "@/types";
 
@@ -87,22 +102,24 @@ export default async function RoomDetailPage({
 
         <div className="mt-6 grid grid-cols-1 gap-6 lg:grid-cols-[1fr_320px]">
           <div className="flex flex-col gap-5">
-            <section className="rounded-xl bg-white p-5 shadow-sm ring-1 ring-black/5">
-              <h2 className="mb-3 text-base font-semibold text-slate-900">
+            <section className="rounded-2xl bg-white p-5 shadow-sm ring-1 ring-black/5">
+              <h2 className="mb-3 flex items-center gap-2 text-base font-semibold text-slate-900">
+                <Info className="h-4 w-4 text-[color:var(--color-accent)]" aria-hidden />
                 Thông tin phòng
               </h2>
-              <dl className="grid grid-cols-2 gap-3 text-sm sm:grid-cols-3">
-                <Fact label="Diện tích" value={`${room.areaSqm} m²`} />
-                <Fact label="Ban công" value={room.hasBalcony ? "Có" : "Không"} />
+              <dl className="grid grid-cols-2 gap-4 text-sm sm:grid-cols-3">
+                <Fact icon={Maximize2} label="Diện tích" value={`${room.areaSqm} m²`} />
+                <Fact icon={DoorOpen} label="Ban công" value={room.hasBalcony ? "Có" : "Không"} />
                 <Fact
+                  icon={Tag}
                   label="Giá thuê"
                   value={`${formatVnd(room.priceMonthly)}/tháng`}
                 />
                 {room.maxOccupancy ? (
-                  <Fact label="Số người ở tối đa" value={`${room.maxOccupancy} người`} />
+                  <Fact icon={Users} label="Số người ở tối đa" value={`${room.maxOccupancy} người`} />
                 ) : null}
                 {room.viewCount > 0 ? (
-                  <Fact label="Lượt xem" value={`${room.viewCount}`} />
+                  <Fact icon={Eye} label="Lượt xem" value={`${room.viewCount}`} />
                 ) : null}
               </dl>
               {room.description ? (
@@ -134,19 +151,17 @@ export default async function RoomDetailPage({
               ) : null}
             </section>
 
-            <section className="rounded-xl bg-white p-5 shadow-sm ring-1 ring-black/5">
-              <h2 className="mb-3 text-base font-semibold text-slate-900">
+            <section className="rounded-2xl bg-white p-5 shadow-sm ring-1 ring-black/5">
+              <h2 className="mb-3 flex items-center gap-2 text-base font-semibold text-slate-900">
+                <Info className="h-4 w-4 text-[color:var(--color-accent)]" aria-hidden />
                 Tiện ích
               </h2>
-              <ul className="grid list-disc grid-cols-1 gap-2 pl-5 text-sm text-slate-600 sm:grid-cols-2">
-                {amenities.map((a, i) => (
-                  <li key={i}>{a}</li>
-                ))}
-              </ul>
+              <AmenityGrid amenities={amenities} />
             </section>
 
-            <section className="rounded-xl bg-white p-5 shadow-sm ring-1 ring-black/5">
-              <h2 className="mb-3 text-base font-semibold text-slate-900">
+            <section className="rounded-2xl bg-white p-5 shadow-sm ring-1 ring-black/5">
+              <h2 className="mb-3 flex items-center gap-2 text-base font-semibold text-slate-900">
+                <MapPin className="h-4 w-4 text-[color:var(--color-accent)]" aria-hidden />
                 Vị trí &amp; di chuyển
               </h2>
               <p className="text-sm text-slate-600">{property.addressNew}</p>
@@ -162,27 +177,31 @@ export default async function RoomDetailPage({
               </ul>
             </section>
 
-            <section className="rounded-xl bg-white p-5 shadow-sm ring-1 ring-black/5">
-              <h2 className="mb-3 text-base font-semibold text-slate-900">
+            <section className="rounded-2xl bg-white p-5 shadow-sm ring-1 ring-black/5">
+              <h2 className="mb-3 flex items-center gap-2 text-base font-semibold text-slate-900">
+                <Wallet className="h-4 w-4 text-[color:var(--color-accent)]" aria-hidden />
                 Phí dịch vụ &amp; chính sách cọc
               </h2>
               {fee ? (
-                <dl className="grid grid-cols-1 gap-3 text-sm sm:grid-cols-3">
+                <dl className="grid grid-cols-1 gap-4 text-sm sm:grid-cols-3">
                   <Fact
+                    icon={Zap}
                     label="Điện"
                     value={`${formatVnd(fee.electricityPricePerKwh)}/kWh`}
                   />
                   <Fact
+                    icon={Droplets}
                     label="Nước"
                     value={`${formatVnd(fee.waterPricePerPerson)}/${fee.waterFeeMode === "per_m3" ? "m³" : "người"}`}
                   />
                   <Fact
+                    icon={Receipt}
                     label="Phí dịch vụ"
                     value={`${formatVnd(fee.serviceFeePerMonth)}/tháng`}
                   />
                 </dl>
               ) : null}
-              <dl className="mt-4 grid grid-cols-1 gap-3 text-sm sm:grid-cols-3">
+              <dl className="mt-4 grid grid-cols-1 gap-4 text-sm sm:grid-cols-3">
                 <Fact
                   label="Cọc giữ phòng"
                   value={`${formatVnd(property.depositPolicy.holdAmount)} (giữ ${property.depositPolicy.holdDays} ngày)`}
@@ -205,7 +224,7 @@ export default async function RoomDetailPage({
           </div>
 
           <aside className="flex flex-col gap-4 lg:sticky lg:top-6 lg:self-start">
-            <div className="rounded-xl bg-white p-5 shadow-sm ring-1 ring-black/5">
+            <div className="rounded-2xl bg-white p-5 shadow-md ring-1 ring-black/5">
               <div className="text-3xl font-bold text-[color:var(--color-accent-dark)]">
                 {formatVnd(room.priceMonthly)}
                 <span className="text-sm font-normal text-slate-500">
@@ -399,11 +418,24 @@ export default async function RoomDetailPage({
   );
 }
 
-function Fact({ label, value }: { label: string; value: string }) {
+function Fact({
+  icon: Icon,
+  label,
+  value,
+}: {
+  icon?: LucideIcon;
+  label: string;
+  value: string;
+}) {
   return (
-    <div>
-      <dt className="text-xs uppercase tracking-wide text-slate-400">{label}</dt>
-      <dd className="font-medium text-slate-800">{value}</dd>
+    <div className="flex items-start gap-2">
+      {Icon ? (
+        <Icon className="mt-0.5 h-4 w-4 flex-none text-slate-400" aria-hidden />
+      ) : null}
+      <div>
+        <dt className="text-xs uppercase tracking-wide text-slate-400">{label}</dt>
+        <dd className="font-medium text-slate-800">{value}</dd>
+      </div>
     </div>
   );
 }

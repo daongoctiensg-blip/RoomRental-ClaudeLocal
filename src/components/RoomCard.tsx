@@ -1,7 +1,9 @@
 import Link from "next/link";
+import { Sparkles, Users, Eye, ArrowRight } from "lucide-react";
 import type { RoomWithProperty } from "@/types";
 import StatusBadge from "@/components/StatusBadge";
 import RoomPhoto from "@/components/RoomPhoto";
+import { AmenityIcon } from "@/components/AmenityIcon";
 import { formatVnd, telHref, zaloHref } from "@/lib/format";
 import { COMMON_AMENITY_KEYWORDS, amenityListMatches } from "@/lib/amenityKeywords";
 
@@ -43,7 +45,7 @@ export default function RoomCard({
   ).slice(0, 3);
 
   return (
-    <article className="flex flex-col overflow-hidden rounded-xl bg-white shadow-md ring-1 ring-black/5 sm:flex-row">
+    <article className="flex flex-col overflow-hidden rounded-2xl bg-white shadow-sm ring-1 ring-black/5 transition-shadow duration-200 hover:shadow-lg sm:flex-row">
       <div className="relative sm:w-[280px] sm:flex-none">
         <RoomPhoto
           src={room.images[0]}
@@ -68,15 +70,17 @@ export default function RoomCard({
 
         <div className="flex flex-wrap gap-2 text-xs text-slate-600">
           {isNewListing(room.createdAt) ? (
-            <span className="rounded-md bg-emerald-100 px-2.5 py-1 font-medium text-emerald-700">
-              ✨ Mới đăng
+            <span className="inline-flex items-center gap-1 rounded-md bg-emerald-100 px-2.5 py-1 font-medium text-emerald-700">
+              <Sparkles className="h-3.5 w-3.5" aria-hidden />
+              Mới đăng
             </span>
           ) : null}
           <span className="rounded-md bg-slate-100 px-2.5 py-1">
             {room.areaSqm} m²
           </span>
           {room.maxOccupancy ? (
-            <span className="rounded-md bg-slate-100 px-2.5 py-1">
+            <span className="inline-flex items-center gap-1 rounded-md bg-slate-100 px-2.5 py-1">
+              <Users className="h-3.5 w-3.5" aria-hidden />
               {room.maxOccupancy} người
             </span>
           ) : null}
@@ -91,14 +95,16 @@ export default function RoomCard({
           {quickAmenityTags.map((tag) => (
             <span
               key={tag}
-              className="rounded-md bg-sky-50 px-2.5 py-1 text-sky-700"
+              className="inline-flex items-center gap-1 rounded-md bg-sky-50 px-2.5 py-1 text-sky-700"
             >
+              <AmenityIcon keyword={tag} className="h-3.5 w-3.5" />
               {tag}
             </span>
           ))}
           {room.viewCount > 0 ? (
-            <span className="rounded-md bg-slate-100 px-2.5 py-1 text-slate-500">
-              👁 {room.viewCount} lượt xem
+            <span className="inline-flex items-center gap-1 rounded-md bg-slate-100 px-2.5 py-1 text-slate-500">
+              <Eye className="h-3.5 w-3.5" aria-hidden />
+              {room.viewCount} lượt xem
             </span>
           ) : null}
         </div>
@@ -111,9 +117,10 @@ export default function RoomCard({
             </div>
             <Link
               href={`/rooms/${room.id}`}
-              className="text-sm font-medium text-[color:var(--color-accent)] hover:underline"
+              className="inline-flex items-center gap-1 text-sm font-medium text-[color:var(--color-accent)] hover:underline"
             >
-              Xem chi tiết →
+              Xem chi tiết
+              <ArrowRight className="h-3.5 w-3.5" aria-hidden />
             </Link>
           </div>
           <div className="flex gap-2">
