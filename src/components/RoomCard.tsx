@@ -2,7 +2,7 @@ import Link from "next/link";
 import { Sparkles, Users, Eye, ArrowRight } from "lucide-react";
 import type { RoomWithProperty } from "@/types";
 import StatusBadge from "@/components/StatusBadge";
-import RoomPhoto from "@/components/RoomPhoto";
+import RoomCardPhotoCarousel from "@/components/RoomCardPhotoCarousel";
 import { AmenityIcon } from "@/components/AmenityIcon";
 import { formatVnd, telHref, zaloHref } from "@/lib/format";
 import { COMMON_AMENITY_KEYWORDS, amenityListMatches } from "@/lib/amenityKeywords";
@@ -47,12 +47,12 @@ export default function RoomCard({
   return (
     <article className="flex flex-col overflow-hidden rounded-2xl bg-white shadow-sm ring-1 ring-black/5 transition-shadow duration-200 hover:shadow-lg sm:flex-row">
       <div className="relative sm:w-[280px] sm:flex-none">
-        <RoomPhoto
-          src={room.images[0]}
-          alt={`Ảnh phòng ${room.code}`}
+        <RoomCardPhotoCarousel
+          photos={room.images}
+          roomCode={room.code}
           className="h-56 w-full object-cover sm:h-full sm:min-h-[260px]"
         />
-        <div className="absolute left-3 top-3">
+        <div className="pointer-events-none absolute left-3 top-3">
           <StatusBadge status={room.status} />
         </div>
       </div>

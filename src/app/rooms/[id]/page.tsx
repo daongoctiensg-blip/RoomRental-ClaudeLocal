@@ -1,26 +1,13 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
-import {
-  Info,
-  MapPin,
-  Wallet,
-  Maximize2,
-  DoorOpen,
-  Tag,
-  Users,
-  Eye,
-  Zap,
-  Droplets,
-  Receipt,
-  type LucideIcon,
-} from "lucide-react";
 import { getRoom, getCurrentUtilityFee, toPublicRoom, recordRoomView } from "@/lib/db";
 import { isAdminSession } from "@/lib/apiAuth";
 import StatusBadge from "@/components/StatusBadge";
 import DepositCountdown from "@/components/DepositCountdown";
 import ShareButtons from "@/components/ShareButtons";
 import PhotoGallery from "@/components/PhotoGallery";
-import AmenityGrid from "@/components/AmenityGrid";
+import RoomDetailTabs from "@/components/RoomDetailTabs";
+import Fact from "@/components/Fact";
 import { formatVnd, telHref, zaloHref } from "@/lib/format";
 import type { Property, PublicProperty, PublicRoom, RoomWithProperty } from "@/types";
 
@@ -102,125 +89,7 @@ export default async function RoomDetailPage({
 
         <div className="mt-6 grid grid-cols-1 gap-6 lg:grid-cols-[1fr_320px]">
           <div className="flex flex-col gap-5">
-            <section className="rounded-2xl bg-white p-5 shadow-sm ring-1 ring-black/5">
-              <h2 className="mb-3 flex items-center gap-2 text-base font-semibold text-slate-900">
-                <Info className="h-4 w-4 text-[color:var(--color-accent)]" aria-hidden />
-                Thông tin phòng
-              </h2>
-              <dl className="grid grid-cols-2 gap-4 text-sm sm:grid-cols-3">
-                <Fact icon={Maximize2} label="Diện tích" value={`${room.areaSqm} m²`} />
-                <Fact icon={DoorOpen} label="Ban công" value={room.hasBalcony ? "Có" : "Không"} />
-                <Fact
-                  icon={Tag}
-                  label="Giá thuê"
-                  value={`${formatVnd(room.priceMonthly)}/tháng`}
-                />
-                {room.maxOccupancy ? (
-                  <Fact icon={Users} label="Số người ở tối đa" value={`${room.maxOccupancy} người`} />
-                ) : null}
-                {room.viewCount > 0 ? (
-                  <Fact icon={Eye} label="Lượt xem" value={`${room.viewCount}`} />
-                ) : null}
-              </dl>
-              {room.description ? (
-                <p className="mt-4 text-sm text-slate-600">{room.description}</p>
-              ) : null}
-              {room.subUnits && room.subUnits.length > 0 ? (
-                <div className="mt-4 border-t border-slate-100 pt-4">
-                  <h3 className="mb-2 text-sm font-semibold text-slate-800">
-                    Phòng gồm các khu riêng
-                  </h3>
-                  <ul className="space-y-2 text-sm text-slate-600">
-                    {room.subUnits.map((su, i) => (
-                      <li key={i} className="flex justify-between gap-3">
-                        <span>
-                          {su.label}
-                          {su.notes ? (
-                            <span className="text-slate-400"> · {su.notes}</span>
-                          ) : null}
-                        </span>
-                        {su.priceMonthly ? (
-                          <span className="font-medium">
-                            {formatVnd(su.priceMonthly)}
-                          </span>
-                        ) : null}
-                      </li>
-                    ))}
-                  </ul>
-                </div>
-              ) : null}
-            </section>
-
-            <section className="rounded-2xl bg-white p-5 shadow-sm ring-1 ring-black/5">
-              <h2 className="mb-3 flex items-center gap-2 text-base font-semibold text-slate-900">
-                <Info className="h-4 w-4 text-[color:var(--color-accent)]" aria-hidden />
-                Tiện ích
-              </h2>
-              <AmenityGrid amenities={amenities} />
-            </section>
-
-            <section className="rounded-2xl bg-white p-5 shadow-sm ring-1 ring-black/5">
-              <h2 className="mb-3 flex items-center gap-2 text-base font-semibold text-slate-900">
-                <MapPin className="h-4 w-4 text-[color:var(--color-accent)]" aria-hidden />
-                Vị trí &amp; di chuyển
-              </h2>
-              <p className="text-sm text-slate-600">{property.addressNew}</p>
-              {property.addressOld ? (
-                <p className="text-xs text-slate-400">
-                  (Địa chỉ cũ: {property.addressOld})
-                </p>
-              ) : null}
-              <ul className="mt-3 list-disc space-y-1 pl-5 text-sm text-slate-600">
-                {property.transportNotes.map((t, i) => (
-                  <li key={i}>{t}</li>
-                ))}
-              </ul>
-            </section>
-
-            <section className="rounded-2xl bg-white p-5 shadow-sm ring-1 ring-black/5">
-              <h2 className="mb-3 flex items-center gap-2 text-base font-semibold text-slate-900">
-                <Wallet className="h-4 w-4 text-[color:var(--color-accent)]" aria-hidden />
-                Phí dịch vụ &amp; chính sách cọc
-              </h2>
-              {fee ? (
-                <dl className="grid grid-cols-1 gap-4 text-sm sm:grid-cols-3">
-                  <Fact
-                    icon={Zap}
-                    label="Điện"
-                    value={`${formatVnd(fee.electricityPricePerKwh)}/kWh`}
-                  />
-                  <Fact
-                    icon={Droplets}
-                    label="Nước"
-                    value={`${formatVnd(fee.waterPricePerPerson)}/${fee.waterFeeMode === "per_m3" ? "m³" : "người"}`}
-                  />
-                  <Fact
-                    icon={Receipt}
-                    label="Phí dịch vụ"
-                    value={`${formatVnd(fee.serviceFeePerMonth)}/tháng`}
-                  />
-                </dl>
-              ) : null}
-              <dl className="mt-4 grid grid-cols-1 gap-4 text-sm sm:grid-cols-3">
-                <Fact
-                  label="Cọc giữ phòng"
-                  value={`${formatVnd(property.depositPolicy.holdAmount)} (giữ ${property.depositPolicy.holdDays} ngày)`}
-                />
-                <Fact
-                  label="Cọc khi ký hợp đồng"
-                  value={`${property.depositPolicy.securityDepositMonths} tháng tiền thuê`}
-                />
-                <Fact
-                  label="Thanh toán trước khi ký"
-                  value={`${property.depositPolicy.prepaidRentMonths} tháng tiền thuê`}
-                />
-              </dl>
-              {property.depositPolicy.customerNote ? (
-                <p className="mt-3 text-xs text-slate-400">
-                  {property.depositPolicy.customerNote}
-                </p>
-              ) : null}
-            </section>
+            <RoomDetailTabs room={room} property={property} amenities={amenities} fee={fee} />
           </div>
 
           <aside className="flex flex-col gap-4 lg:sticky lg:top-6 lg:self-start">
@@ -414,28 +283,6 @@ export default async function RoomDetailPage({
           </aside>
         </div>
       </main>
-    </div>
-  );
-}
-
-function Fact({
-  icon: Icon,
-  label,
-  value,
-}: {
-  icon?: LucideIcon;
-  label: string;
-  value: string;
-}) {
-  return (
-    <div className="flex items-start gap-2">
-      {Icon ? (
-        <Icon className="mt-0.5 h-4 w-4 flex-none text-slate-400" aria-hidden />
-      ) : null}
-      <div>
-        <dt className="text-xs uppercase tracking-wide text-slate-400">{label}</dt>
-        <dd className="font-medium text-slate-800">{value}</dd>
-      </div>
     </div>
   );
 }
