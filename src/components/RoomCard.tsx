@@ -50,7 +50,7 @@ export default function RoomCard({
         <RoomCardPhotoCarousel
           photos={room.images}
           roomCode={room.code}
-          className="h-56 w-full object-cover sm:h-full sm:min-h-[260px]"
+          className="h-64 w-full bg-slate-100 object-contain"
         />
         <div className="pointer-events-none absolute left-3 top-3">
           <StatusBadge status={room.status} />

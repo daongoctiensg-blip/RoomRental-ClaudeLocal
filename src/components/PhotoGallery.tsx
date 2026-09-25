@@ -57,7 +57,7 @@ export default function PhotoGallery({
           <RoomPhoto
             src={photos[0]}
             alt={`Ảnh chính phòng ${roomCode}`}
-            className="h-72 w-full rounded-xl object-cover sm:h-full"
+            className="h-[264px] w-full rounded-xl bg-slate-100 object-contain"
           />
         </button>
         {photos.slice(1, 5).map((src, i) => (
@@ -71,7 +71,7 @@ export default function PhotoGallery({
             <RoomPhoto
               src={src}
               alt={`Ảnh phòng ${roomCode} ${i + 2}`}
-              className="h-32 w-full rounded-xl object-cover sm:h-full"
+              className="h-32 w-full rounded-xl bg-slate-100 object-contain"
             />
           </button>
         ))}

@@ -79,14 +79,14 @@ export default async function RoomExportPage({
         <RoomPhoto
           src={photos[0]}
           alt={`Ảnh chính phòng ${room.code}`}
-          className="col-span-2 h-64 w-full rounded-lg object-cover print:col-span-3 print:h-56"
+          className="col-span-2 h-64 w-full rounded-lg bg-slate-100 object-contain print:col-span-3 print:h-56"
         />
         {photos.slice(1, 5).map((src, i) => (
           <RoomPhoto
             key={i}
             src={src}
             alt={`Ảnh phòng ${room.code} ${i + 2}`}
-            className="h-28 w-full rounded-lg object-cover"
+            className="h-28 w-full rounded-lg bg-slate-100 object-contain"
           />
         ))}
       </div>
