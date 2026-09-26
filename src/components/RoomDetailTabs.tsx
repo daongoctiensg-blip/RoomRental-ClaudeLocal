@@ -343,6 +343,8 @@ export default function RoomDetailTabs({
 
 function MoveInCostBreakdown({ moveIn }: { moveIn: MoveInCost }) {
   const row = "flex items-baseline justify-between gap-4 py-2";
+  const sub = "block text-xs text-slate-400";
+  const hasHold = moveIn.holdAmount > 0;
   return (
     <section>
       <h3 className="mb-1 text-sm font-semibold text-slate-800">Chi phí nhận phòng dự kiến</h3>
@@ -350,21 +352,27 @@ function MoveInCostBreakdown({ moveIn }: { moveIn: MoveInCost }) {
         Tính theo chính sách cọc của tòa nhà và giá thuê phòng này.
       </p>
       <div className="divide-y divide-slate-100 rounded-xl border border-slate-200 px-4 text-sm">
-        {moveIn.holdAmount > 0 ? (
+        {hasHold ? (
           <div className={row}>
             <span className="text-slate-600">
-              <span className="font-medium text-slate-800">Bước 1 · Giữ chỗ</span>
+              <span className="font-medium text-slate-800">Bước 1 · Cọc giữ chỗ</span>
               {moveIn.holdDays > 0 ? ` (giữ phòng ${moveIn.holdDays} ngày)` : ""}
+              <span className={sub}>Được tính vào tiền cọc nhà khi ký hợp đồng</span>
             </span>
             <span className="font-medium text-slate-800">{formatVnd(moveIn.holdAmount)}</span>
           </div>
         ) : null}
         <div className={row}>
           <span className="text-slate-600">
-            <span className="font-medium text-slate-800">Bước 2 · Cọc hợp đồng</span> (
-            {moveIn.securityDepositMonths} tháng tiền thuê)
+            <span className="font-medium text-slate-800">
+              {hasHold ? "Bước 2 · Bù thêm cho đủ cọc nhà" : "Bước 2 · Cọc nhà"}
+            </span>
+            <span className={sub}>
+              Cọc nhà {moveIn.securityDepositMonths} tháng = {formatVnd(moveIn.securityDeposit)}
+              {hasHold ? ` − đã giữ chỗ ${formatVnd(moveIn.holdAmount)}` : ""}
+            </span>
           </span>
-          <span className="font-medium text-slate-800">{formatVnd(moveIn.securityDeposit)}</span>
+          <span className="font-medium text-slate-800">{formatVnd(moveIn.depositTopUp)}</span>
         </div>
         <div className={row}>
           <span className="text-slate-600">
@@ -373,10 +381,22 @@ function MoveInCostBreakdown({ moveIn }: { moveIn: MoveInCost }) {
           </span>
           <span className="font-medium text-slate-800">{formatVnd(moveIn.prepaidRent)}</span>
         </div>
+        {hasHold ? (
+          <div className={row}>
+            <span className="text-slate-600">Đóng thêm khi ký hợp đồng (bước 2 + 3)</span>
+            <span className="font-medium text-slate-800">{formatVnd(moveIn.payAtSigning)}</span>
+          </div>
+        ) : null}
         <div className={`${row} font-semibold`}>
-          <span className="text-slate-800">Tổng khi ký hợp đồng (bước 2 + 3)</span>
+          <span className="text-slate-800">
+            Tổng chi phí nhận phòng
+            <span className={`${sub} font-normal`}>
+              Gồm cọc nhà {formatVnd(moveIn.securityDeposit)} + tiền thuê trả trước{" "}
+              {formatVnd(moveIn.prepaidRent)}
+            </span>
+          </span>
           <span className="text-lg text-[color:var(--color-accent-dark)]">
-            {formatVnd(moveIn.totalAtSigning)}
+            {formatVnd(moveIn.totalMoveIn)}
           </span>
         </div>
       </div>

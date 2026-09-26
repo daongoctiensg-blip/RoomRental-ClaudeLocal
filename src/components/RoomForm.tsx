@@ -1,17 +1,11 @@
 "use client";
 
-import { useRef, useState } from "react";
+import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { apiUrl } from "@/lib/basePath";
 import AmenityPicker from "@/components/AmenityPicker";
+import ImageListEditor from "@/components/ImageListEditor";
 import type { Property, Room, SubUnit } from "@/types";
-
-function splitLines(value: string): string[] {
-  return value
-    .split("\n")
-    .map((s) => s.trim())
-    .filter(Boolean);
-}
 
 export default function RoomForm({
   room,
@@ -36,44 +30,13 @@ export default function RoomForm({
   );
   const [description, setDescription] = useState(room?.description ?? "");
   const [internalNotes, setInternalNotes] = useState(room?.internalNotes ?? "");
-  const [images, setImages] = useState((room?.images ?? []).join("\n"));
+  const [images, setImages] = useState<string[]>(room?.images ?? []);
   const [amenitiesOverride, setAmenitiesOverride] = useState<string[]>(
     room?.amenitiesOverride ?? []
   );
   const [subUnits, setSubUnits] = useState<SubUnit[]>(room?.subUnits ?? []);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [uploading, setUploading] = useState(false);
-  const [uploadError, setUploadError] = useState<string | null>(null);
-  const fileInputRef = useRef<HTMLInputElement>(null);
-
-  const onPickFiles = async (e: React.ChangeEvent<HTMLInputElement>) => {
-    const files = Array.from(e.target.files ?? []);
-    e.target.value = ""; // cho phép chọn lại đúng file đó lần sau
-    if (!files.length) return;
-
-    setUploading(true);
-    setUploadError(null);
-    const uploadedUrls: string[] = [];
-    for (const file of files) {
-      const body = new FormData();
-      body.append("file", file);
-      const res = await fetch(apiUrl("/api/upload"), { method: "POST", body });
-      const data = await res.json().catch(() => ({}));
-      if (!res.ok) {
-        setUploadError(data.error ?? `Tải lên "${file.name}" thất bại`);
-        continue; // vẫn thử các file còn lại, không dừng cả loạt vì 1 file lỗi
-      }
-      uploadedUrls.push(data.url as string);
-    }
-    setUploading(false);
-    if (uploadedUrls.length) {
-      setImages((prev) =>
-        [prev.trim(), ...uploadedUrls].filter(Boolean).join("\n")
-      );
-    }
-  };
-
   const onSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setSaving(true);
@@ -94,7 +57,7 @@ export default function RoomForm({
       status: room?.status ?? "available",
       description: description || null,
       internalNotes: internalNotes || null,
-      images: splitLines(images),
+      images,
       // Empty = use the property's shared amenities (stored as NULL).
       amenitiesOverride: amenitiesOverride.length > 0 ? amenitiesOverride : null,
       subUnits: subUnits.length > 0 ? subUnits : null,
@@ -230,38 +193,10 @@ export default function RoomForm({
             className={inputClass}
           />
         </label>
-        <label className="mt-4 flex flex-col gap-1">
-          <span className="text-sm font-medium text-slate-700">
-            Ảnh phòng (mỗi dòng 1 URL)
-          </span>
-          <textarea
-            value={images}
-            onChange={(e) => setImages(e.target.value)}
-            rows={3}
-            className={inputClass}
-          />
-          <div className="mt-1 flex items-center gap-2">
-            <input
-              ref={fileInputRef}
-              type="file"
-              accept="image/jpeg,image/png,image/webp,image/gif"
-              multiple
-              className="hidden"
-              onChange={onPickFiles}
-            />
-            <button
-              type="button"
-              onClick={() => fileInputRef.current?.click()}
-              disabled={uploading}
-              className="rounded-lg border border-slate-300 px-3 py-1.5 text-xs font-medium text-slate-700 hover:border-[color:var(--color-accent)] disabled:opacity-60"
-            >
-              {uploading ? "Đang tải lên…" : "📷 Tải ảnh lên từ máy"}
-            </button>
-            {uploadError ? (
-              <span className="text-xs text-red-600">{uploadError}</span>
-            ) : null}
-          </div>
-        </label>
+        <div className="mt-4 flex flex-col gap-1">
+          <span className="text-sm font-medium text-slate-700">Ảnh phòng</span>
+          <ImageListEditor value={images} onChange={setImages} />
+        </div>
         <label className="mt-4 flex flex-col gap-1">
           <span className="text-sm font-medium text-slate-700">
             Tiện ích riêng của phòng (để trống = dùng tiện ích chung của nhà)

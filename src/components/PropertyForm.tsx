@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useRef, useState } from "react";
+import { useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import { apiUrl } from "@/lib/basePath";
 import vnProvinces from "@/data/vn-provinces.json";
@@ -8,6 +8,7 @@ import vnWards from "@/data/vn-wards.json";
 import vnHcmDistricts from "@/data/vn-hcm-districts.json";
 import SearchableSelect from "@/components/SearchableSelect";
 import AmenityPicker from "@/components/AmenityPicker";
+import ImageListEditor from "@/components/ImageListEditor";
 import type { CommissionTier, Property, UtilityFeeVersion } from "@/types";
 
 type FormState = {
@@ -23,7 +24,7 @@ type FormState = {
   landlordZalo: string;
   amenitiesShared: string[]; // picked from the amenity catalog (round 12)
   transportNotes: string; // newline-separated in the UI
-  images: string; // newline-separated URLs
+  images: string[]; // ordered photo URLs, first = cover (round 12d)
   holdAmount: number;
   holdDays: number;
   securityDepositMonths: number;
@@ -66,7 +67,7 @@ function toFormState(property?: Property): FormState {
     landlordZalo: property?.landlordZalo ?? "",
     amenitiesShared: property?.amenitiesShared ?? [],
     transportNotes: (property?.transportNotes ?? []).join("\n"),
-    images: (property?.images ?? []).join("\n"),
+    images: property?.images ?? [],
     holdAmount: property?.depositPolicy.holdAmount ?? 2000000,
     holdDays: property?.depositPolicy.holdDays ?? 7,
     securityDepositMonths: property?.depositPolicy.securityDepositMonths ?? 1,
@@ -149,40 +150,8 @@ export default function PropertyForm({ property }: { property?: Property }) {
   );
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [uploading, setUploading] = useState(false);
-  const [uploadError, setUploadError] = useState<string | null>(null);
-  const fileInputRef = useRef<HTMLInputElement>(null);
-
   const update = <K extends keyof FormState>(key: K, value: FormState[K]) =>
     setForm((f) => ({ ...f, [key]: value }));
-
-  const onPickFiles = async (e: React.ChangeEvent<HTMLInputElement>) => {
-    const files = Array.from(e.target.files ?? []);
-    e.target.value = ""; // cho phép chọn lại đúng file đó lần sau
-    if (!files.length) return;
-
-    setUploading(true);
-    setUploadError(null);
-    const uploadedUrls: string[] = [];
-    for (const file of files) {
-      const body = new FormData();
-      body.append("file", file);
-      const res = await fetch(apiUrl("/api/upload"), { method: "POST", body });
-      const data = await res.json().catch(() => ({}));
-      if (!res.ok) {
-        setUploadError(data.error ?? `Tải lên "${file.name}" thất bại`);
-        continue; // vẫn thử các file còn lại, không dừng cả loạt vì 1 file lỗi
-      }
-      uploadedUrls.push(data.url as string);
-    }
-    setUploading(false);
-    if (uploadedUrls.length) {
-      update(
-        "images",
-        [form.images.trim(), ...uploadedUrls].filter(Boolean).join("\n")
-      );
-    }
-  };
 
   const onSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -202,7 +171,7 @@ export default function PropertyForm({ property }: { property?: Property }) {
       landlordZalo: form.landlordZalo || undefined,
       amenitiesShared: form.amenitiesShared,
       transportNotes: splitLines(form.transportNotes),
-      images: splitLines(form.images),
+      images: form.images,
       depositPolicy: {
         holdAmount: Number(form.holdAmount),
         holdDays: Number(form.holdDays),
@@ -365,12 +334,12 @@ export default function PropertyForm({ property }: { property?: Property }) {
       </Section>
 
       <Section title="Tiện ích & di chuyển">
-        <Field label="Tiện ích chung (chọn từ danh mục)">
+        <FieldGroup label="Tiện ích chung (chọn từ danh mục)">
           <AmenityPicker
             value={form.amenitiesShared}
             onChange={(next) => update("amenitiesShared", next)}
           />
-        </Field>
+        </FieldGroup>
         <Field label="Di chuyển / vị trí (mỗi dòng 1 mục)">
           <textarea
             value={form.transportNotes}
@@ -379,35 +348,9 @@ export default function PropertyForm({ property }: { property?: Property }) {
             className={inputClass}
           />
         </Field>
-        <Field label="Ảnh nhà (mỗi dòng 1 URL)">
-          <textarea
-            value={form.images}
-            onChange={(e) => update("images", e.target.value)}
-            rows={3}
-            className={inputClass}
-          />
-          <div className="mt-1 flex items-center gap-2">
-            <input
-              ref={fileInputRef}
-              type="file"
-              accept="image/jpeg,image/png,image/webp,image/gif"
-              multiple
-              className="hidden"
-              onChange={onPickFiles}
-            />
-            <button
-              type="button"
-              onClick={() => fileInputRef.current?.click()}
-              disabled={uploading}
-              className="rounded-lg border border-slate-300 px-3 py-1.5 text-xs font-medium text-slate-700 hover:border-[color:var(--color-accent)] disabled:opacity-60"
-            >
-              {uploading ? "Đang tải lên…" : "📷 Tải ảnh lên từ máy"}
-            </button>
-            {uploadError ? (
-              <span className="text-xs text-red-600">{uploadError}</span>
-            ) : null}
-          </div>
-        </Field>
+        <FieldGroup label="Ảnh nhà">
+          <ImageListEditor value={form.images} onChange={(next) => update("images", next)} />
+        </FieldGroup>
       </Section>
 
       <Section title="Phí dịch vụ (điện / nước / phí dịch vụ chung)">
@@ -706,6 +649,20 @@ function Section({
       </h2>
       <div className="flex flex-col gap-4">{children}</div>
     </section>
+  );
+}
+
+/** Same look as <Field>, but a <div> instead of a <label> — for widgets
+ * that contain several buttons (amenity chips, photo thumbnails). Inside a
+ * <label>, a click on any non-button area (a photo, a chip's text) is
+ * forwarded to the label's first button — which would be the first "X"
+ * and silently remove an item. Found while building the photo editor. */
+function FieldGroup({ label, children }: { label: string; children: React.ReactNode }) {
+  return (
+    <div className="flex flex-col gap-1">
+      <span className="text-sm font-medium text-slate-700">{label}</span>
+      {children}
+    </div>
   );
 }
 

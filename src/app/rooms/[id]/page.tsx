@@ -161,11 +161,11 @@ export default async function RoomDetailPage({
             </ul>
           </div>
 
-          {moveIn.totalAtSigning > 0 ? (
+          {moveIn.totalMoveIn > 0 ? (
             <div className="mt-3 flex items-center justify-between gap-2 text-sm">
               <span className="text-slate-600">
-                Khi ký HĐ cần:{" "}
-                <strong className="text-slate-900">{formatVnd(moveIn.totalAtSigning)}</strong>
+                Tổng nhận phòng:{" "}
+                <strong className="text-slate-900">{formatVnd(moveIn.totalMoveIn)}</strong>
               </span>
               <RoomTabLink
                 tab="policy"
