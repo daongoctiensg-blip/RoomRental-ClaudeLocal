@@ -54,11 +54,13 @@ export async function listAmenitiesWithUsage(): Promise<AmenityWithUsage[]> {
   };
   const [props] = await pool.query("SELECT amenities_shared FROM properties");
   for (const r of props as { amenities_shared: unknown }[]) bump(parseNameList(r.amenities_shared));
+  // Round 12e: a room "uses" an amenity only by ADDING it. A name in a
+  // room's removed list isn't a use (the room explicitly doesn't have it);
+  // deleteAmenity() strips such leftovers instead.
   const [rooms] = await pool.query(
-    "SELECT amenities_override FROM rooms WHERE amenities_override IS NOT NULL"
+    "SELECT amenities_added FROM rooms WHERE amenities_added IS NOT NULL"
   );
-  for (const r of rooms as { amenities_override: unknown }[])
-    bump(parseNameList(r.amenities_override));
+  for (const r of rooms as { amenities_added: unknown }[]) bump(parseNameList(r.amenities_added));
   return catalog.map((a) => ({ ...a, usageCount: counts.get(normalizeAmenityName(a.name)) ?? 0 }));
 }
 
@@ -131,6 +133,24 @@ export async function canonicalizeAmenityNames(
   return out;
 }
 
+/** Round 12e: canonicalizes a room's added/removed pair. Both lists go
+ * through the catalog (new "added" names are registered); a name can't be
+ * both added and removed — "added" wins (the admin's latest explicit
+ * intent is "this room has it"). Empty lists come back as undefined so they
+ * are stored as NULL. */
+export async function canonicalizeAmenityDelta(
+  added: string[] | undefined | null,
+  removed: string[] | undefined | null,
+  db: Db = getPool()
+): Promise<{ added?: string[]; removed?: string[] }> {
+  const a = await canonicalizeAmenityNames(added, db);
+  const aKeys = new Set(a.map(normalizeAmenityName));
+  const r = (await canonicalizeAmenityNames(removed, db)).filter(
+    (n) => !aKeys.has(normalizeAmenityName(n))
+  );
+  return { added: a.length ? a : undefined, removed: r.length ? r : undefined };
+}
+
 /** Rewrites one amenity name to another inside every property/room list
  * that contains it — what keeps a catalog rename from orphaning the names
  * already saved on properties/rooms. */
@@ -165,15 +185,15 @@ async function replaceAmenityNameEverywhere(
     }
   }
   const [rooms] = await conn.query(
-    "SELECT id, amenities_override FROM rooms WHERE amenities_override IS NOT NULL FOR UPDATE"
+    `SELECT id, amenities_added, amenities_removed FROM rooms
+     WHERE amenities_added IS NOT NULL OR amenities_removed IS NOT NULL FOR UPDATE`
   );
-  for (const r of rooms as { id: string; amenities_override: unknown }[]) {
-    const next = rewrite(parseNameList(r.amenities_override) ?? []);
-    if (next) {
-      await conn.query("UPDATE rooms SET amenities_override = ? WHERE id = ?", [
-        JSON.stringify(next),
-        r.id,
-      ]);
+  for (const r of rooms as { id: string; amenities_added: unknown; amenities_removed: unknown }[]) {
+    for (const column of ["amenities_added", "amenities_removed"] as const) {
+      const next = rewrite(parseNameList(r[column]) ?? []);
+      if (next) {
+        await conn.query(`UPDATE rooms SET ${column} = ? WHERE id = ?`, [JSON.stringify(next), r.id]);
+      }
     }
   }
 }
@@ -266,6 +286,23 @@ export async function deleteAmenity(id: string): Promise<true | { error: string 
       error: `"${item.name}" đang được dùng ở ${item.usageCount} tòa nhà/phòng — bỏ chọn ở đó trước rồi mới xoá được.`,
     };
   }
-  await getPool().query("DELETE FROM amenities WHERE id = ?", [id]);
+  // Strip the name from any room's "removed" list too — otherwise, if the
+  // same name were re-created later, those rooms would silently hide it.
+  const pool = getPool();
+  const key = normalizeAmenityName(item.name);
+  const [rows] = await pool.query(
+    "SELECT id, amenities_removed FROM rooms WHERE amenities_removed IS NOT NULL"
+  );
+  for (const r of rows as { id: string; amenities_removed: unknown }[]) {
+    const list = parseNameList(r.amenities_removed) ?? [];
+    const next = list.filter((n) => normalizeAmenityName(n) !== key);
+    if (next.length !== list.length) {
+      await pool.query("UPDATE rooms SET amenities_removed = ? WHERE id = ?", [
+        next.length ? JSON.stringify(next) : null,
+        r.id,
+      ]);
+    }
+  }
+  await pool.query("DELETE FROM amenities WHERE id = ?", [id]);
   return true;
 }

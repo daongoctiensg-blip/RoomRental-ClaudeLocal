@@ -4,6 +4,7 @@ import { getPool } from "@/lib/mysqlPool";
 import { buildSeedDatabase } from "@/lib/seed";
 import {
   DEFAULT_AMENITIES,
+  diffAmenities,
   guessAmenityGroup,
   normalizeAmenityName,
   splitLegacyAmenityLine,
@@ -189,6 +190,65 @@ async function ensureInternalNotesColumn(pool: import("mysql2/promise").Pool): P
   }
 }
 
+// Round 12e — rooms stop REPLACING the building's amenity list and instead
+// store only the difference (amenities_added / amenities_removed). Adds the
+// two columns if missing, then converts every legacy amenities_override into
+// that difference against its property's CURRENT amenities_shared, and
+// clears the override. Result is identical to what customers saw before
+// (effective list = building − removed + added = old override). Idempotent:
+// only rows that still have a non-NULL override are touched, and a converted
+// row never gets an override again (the app no longer writes that column).
+async function ensureAmenityDeltaColumns(pool: import("mysql2/promise").Pool): Promise<void> {
+  const [cols] = await pool.query(
+    `SELECT COLUMN_NAME FROM information_schema.COLUMNS
+     WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'rooms'
+       AND COLUMN_NAME IN ('amenities_added', 'amenities_removed')`
+  );
+  const existing = new Set((cols as { COLUMN_NAME: string }[]).map((c) => c.COLUMN_NAME));
+  if (!existing.has("amenities_added")) {
+    await alterIfMissing(
+      pool,
+      "ALTER TABLE rooms ADD COLUMN amenities_added JSON NULL AFTER amenities_override",
+      "Adding rooms.amenities_added column"
+    );
+  }
+  if (!existing.has("amenities_removed")) {
+    await alterIfMissing(
+      pool,
+      "ALTER TABLE rooms ADD COLUMN amenities_removed JSON NULL AFTER amenities_added",
+      "Adding rooms.amenities_removed column"
+    );
+  }
+}
+
+async function convertLegacyAmenityOverrides(pool: import("mysql2/promise").Pool): Promise<void> {
+  const toList = (v: unknown): string[] => {
+    if (v === null || v === undefined) return [];
+    const parsed = typeof v === "string" ? JSON.parse(v) : v;
+    return Array.isArray(parsed) ? parsed.filter((x): x is string => typeof x === "string") : [];
+  };
+  const [rows] = await pool.query(
+    `SELECT r.id, r.amenities_override, p.amenities_shared
+     FROM rooms r JOIN properties p ON p.id = r.property_id
+     WHERE r.amenities_override IS NOT NULL`
+  );
+  for (const r of rows as { id: string; amenities_override: unknown; amenities_shared: unknown }[]) {
+    const override = toList(r.amenities_override);
+    const building = toList(r.amenities_shared);
+    // An empty override list meant "no override" in practice (the form never
+    // saved []), so it converts to "inherit everything".
+    const { added, removed } =
+      override.length > 0 ? diffAmenities(override, building) : { added: [], removed: [] };
+    console.log(
+      `  room ${r.id}: override ${JSON.stringify(override)} -> added ${JSON.stringify(added)}, removed ${JSON.stringify(removed)}`
+    );
+    await pool.query(
+      "UPDATE rooms SET amenities_added = ?, amenities_removed = ?, amenities_override = NULL WHERE id = ?",
+      [added.length ? JSON.stringify(added) : null, removed.length ? JSON.stringify(removed) : null, r.id]
+    );
+  }
+}
+
 async function tableExists(pool: import("mysql2/promise").Pool, table: string): Promise<boolean> {
   const [rows] = await pool.query(
     `SELECT TABLE_NAME FROM information_schema.TABLES
@@ -267,6 +327,32 @@ async function syncAmenityCatalog(
       ]);
     }
   }
+  // Round 12e columns (only once they exist — ensureAmenityDeltaColumns runs
+  // before this). Register/canonicalize names in rooms' added/removed lists.
+  for (const column of ["amenities_added", "amenities_removed"] as const) {
+    const [deltaRows] = await pool.query(
+      `SELECT id, ${column} AS v FROM rooms WHERE ${column} IS NOT NULL`
+    );
+    for (const r of deltaRows as { id: string; v: unknown }[]) {
+      const before = toList(r.v);
+      const after: string[] = [];
+      const seen = new Set<string>();
+      for (const item of before) {
+        const key = normalizeAmenityName(item);
+        if (!key || seen.has(key)) continue;
+        const res = await ensureAmenity(item, { group: guessAmenityGroup(item) }, pool);
+        if ("error" in res) continue;
+        seen.add(key);
+        after.push(res.amenity.name);
+      }
+      if (JSON.stringify(before) !== JSON.stringify(after)) {
+        await pool.query(`UPDATE rooms SET ${column} = ? WHERE id = ?`, [
+          after.length ? JSON.stringify(after) : null,
+          r.id,
+        ]);
+      }
+    }
+  }
   console.log("Amenity catalog OK.");
 }
 
@@ -301,12 +387,14 @@ async function main() {
   await ensureCityWardColumns(pool);
   await ensureNewBusinessFieldsColumns(pool);
   await ensureInternalNotesColumn(pool);
+  await ensureAmenityDeltaColumns(pool);
 
   const [rows] = await pool.query("SELECT COUNT(*) AS n FROM properties");
   const count = (rows as { n: number }[])[0].n;
   if (count > 0) {
     console.log(`properties table already has ${count} row(s) — skipping seed.`);
     await syncAmenityCatalog(pool, amenitiesFirstRun);
+    await convertLegacyAmenityOverrides(pool);
     await pool.end();
     return;
   }
@@ -359,8 +447,8 @@ async function main() {
         (id, property_id, code, floor, area_sqm, has_balcony, price_monthly,
          max_occupancy, view_count,
          status, status_updated_at, current_deposit, sub_units,
-         amenities_override, images, description, internal_notes, is_active, created_at, updated_at)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+         amenities_added, amenities_removed, images, description, internal_notes, is_active, created_at, updated_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       [
         r.id,
         r.propertyId,
@@ -375,7 +463,8 @@ async function main() {
         r.statusUpdatedAt,
         r.currentDeposit ? JSON.stringify(r.currentDeposit) : null,
         r.subUnits ? JSON.stringify(r.subUnits) : null,
-        r.amenitiesOverride ? JSON.stringify(r.amenitiesOverride) : null,
+        r.amenitiesAdded?.length ? JSON.stringify(r.amenitiesAdded) : null,
+        r.amenitiesRemoved?.length ? JSON.stringify(r.amenitiesRemoved) : null,
         JSON.stringify(r.images),
         r.description ?? null,
         r.internalNotes ?? null,
@@ -388,6 +477,7 @@ async function main() {
 
   console.log(`Seeded ${seed.properties.length} property(ies), ${seed.rooms.length} room(s).`);
   await syncAmenityCatalog(pool, amenitiesFirstRun);
+  await convertLegacyAmenityOverrides(pool);
   await pool.end();
 }
 

@@ -10,7 +10,7 @@ import {
 } from "@/lib/db";
 import { isAdminSession } from "@/lib/apiAuth";
 import { listAmenities } from "@/lib/amenityCatalog";
-import { groupAmenities, resolveAmenities } from "@/lib/amenities";
+import { effectiveAmenities, groupAmenities, resolveAmenities } from "@/lib/amenities";
 import { calculateMoveInCost } from "@/lib/moveInCost";
 import { findNearbyRooms } from "@/lib/nearbyRooms";
 import StatusBadge from "@/components/StatusBadge";
@@ -69,7 +69,7 @@ export default async function RoomDetailPage({
     listAmenities(),
     listRooms({ status: ["available"] }),
   ]);
-  const amenities = resolveAmenities(room.amenitiesOverride ?? property.amenitiesShared, catalog);
+  const amenities = resolveAmenities(effectiveAmenities(room, property.amenitiesShared), catalog);
   const amenityGroups = groupAmenities(amenities);
   // Highlights: "phổ biến" items first (same ones as the homepage filter),
   // then the rest, in the order the admin picked them.

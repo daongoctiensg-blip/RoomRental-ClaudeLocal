@@ -23,7 +23,7 @@ import type {
 import { getPool } from "@/lib/mysqlPool";
 import { extractSearchKeywords, matchesKeywords } from "@/lib/search";
 import { NEARBY_RADIUS_KM, geocodeAddress, haversineDistanceKm } from "@/lib/geocode";
-import { canonicalizeAmenityNames } from "@/lib/amenityCatalog";
+import { canonicalizeAmenityDelta, canonicalizeAmenityNames } from "@/lib/amenityCatalog";
 
 // ---------------------------------------------------------------------------
 // MySQL-backed data layer. Every function here returns/accepts the exact
@@ -135,8 +135,11 @@ function rowToRoom(row: any): Room {
     statusUpdatedAt: row.status_updated_at,
     currentDeposit: row.current_deposit ? parseJson(row.current_deposit, undefined) : undefined,
     subUnits: row.sub_units ? parseJson(row.sub_units, undefined) : undefined,
-    amenitiesOverride: row.amenities_override
-      ? parseJson(row.amenities_override, undefined)
+    amenitiesAdded: row.amenities_added
+      ? parseJson(row.amenities_added, undefined) ?? undefined
+      : undefined,
+    amenitiesRemoved: row.amenities_removed
+      ? parseJson(row.amenities_removed, undefined) ?? undefined
       : undefined,
     images: parseJson(row.images, []),
     description: row.description ?? undefined,
@@ -837,13 +840,13 @@ export async function recordRoomView(id: string): Promise<void> {
 
 export async function createRoom(input: RoomInput): Promise<Room> {
   const pool = getPool();
-  // Round 12: an empty override means "use the property's amenities" —
-  // stored as NULL, never as an empty list (which would read as "this room
-  // has no amenities at all").
-  const override = await canonicalizeAmenityNames(input.amenitiesOverride);
+  // Round 12e: rooms store only the difference from their property's
+  // amenities (added / removed), both canonicalized against the catalog.
+  const delta = await canonicalizeAmenityDelta(input.amenitiesAdded, input.amenitiesRemoved);
   const room: Room = {
     ...input,
-    amenitiesOverride: override.length > 0 ? override : undefined,
+    amenitiesAdded: delta.added,
+    amenitiesRemoved: delta.removed,
     id: `room-${randomUUID()}`,
     // viewCount is a real counter, never caller-supplied — always starts at
     // 0 for a brand-new room regardless of what's in `input`.
@@ -857,8 +860,8 @@ export async function createRoom(input: RoomInput): Promise<Room> {
       (id, property_id, code, floor, area_sqm, has_balcony, price_monthly,
        max_occupancy, view_count,
        status, status_updated_at, current_deposit, sub_units,
-       amenities_override, images, description, internal_notes, is_active, created_at, updated_at)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+       amenities_added, amenities_removed, images, description, internal_notes, is_active, created_at, updated_at)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
     [
       room.id,
       room.propertyId,
@@ -873,7 +876,8 @@ export async function createRoom(input: RoomInput): Promise<Room> {
       room.statusUpdatedAt,
       room.currentDeposit ? JSON.stringify(room.currentDeposit) : null,
       room.subUnits ? JSON.stringify(room.subUnits) : null,
-      room.amenitiesOverride ? JSON.stringify(room.amenitiesOverride) : null,
+      room.amenitiesAdded ? JSON.stringify(room.amenitiesAdded) : null,
+      room.amenitiesRemoved ? JSON.stringify(room.amenitiesRemoved) : null,
       JSON.stringify(room.images),
       room.description ?? null,
       room.internalNotes ?? null,
@@ -899,7 +903,8 @@ const ROOM_COLUMN_MAP: Record<string, string> = {
 };
 const ROOM_JSON_COLUMN_MAP: Record<string, string> = {
   subUnits: "sub_units",
-  amenitiesOverride: "amenities_override",
+  amenitiesAdded: "amenities_added",
+  amenitiesRemoved: "amenities_removed",
   images: "images",
 };
 
@@ -916,9 +921,21 @@ export async function updateRoom(
   const sets: string[] = [];
   const values: unknown[] = [];
 
-  if ("amenitiesOverride" in input) {
-    const override = await canonicalizeAmenityNames(input.amenitiesOverride);
-    input = { ...input, amenitiesOverride: override.length > 0 ? override : undefined };
+  // Round 12e: added/removed are canonicalized as a PAIR (a name can't end
+  // up in both), so a request touching either one rewrites both. If only
+  // one is sent, the other is taken from what's currently stored.
+  if ("amenitiesAdded" in input || "amenitiesRemoved" in input) {
+    let current: { amenitiesAdded?: string[]; amenitiesRemoved?: string[] } = {};
+    if (!("amenitiesAdded" in input) || !("amenitiesRemoved" in input)) {
+      const [rows] = await pool.query("SELECT * FROM rooms WHERE id = ?", [id]);
+      const arr = rows as unknown[];
+      if (arr.length) current = rowToRoom(arr[0]);
+    }
+    const delta = await canonicalizeAmenityDelta(
+      "amenitiesAdded" in input ? input.amenitiesAdded : current.amenitiesAdded,
+      "amenitiesRemoved" in input ? input.amenitiesRemoved : current.amenitiesRemoved
+    );
+    input = { ...input, amenitiesAdded: delta.added, amenitiesRemoved: delta.removed };
   }
 
   for (const [key, column] of Object.entries(ROOM_COLUMN_MAP)) {

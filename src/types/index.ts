@@ -199,7 +199,16 @@ export interface Room {
   /** Set only while status === "deposited"; cleared on cancel/expire/sign. */
   currentDeposit?: ActiveDeposit;
   subUnits?: SubUnit[];
-  amenitiesOverride?: string[];
+  /** Round 12e: a room INHERITS its property's amenitiesShared and only
+   * stores the difference — names added for this room only, and building
+   * names this room doesn't have. So when the building gains an amenity
+   * later, every room gets it automatically (unless it removed it). Use
+   * effectiveAmenities() in src/lib/amenities.ts to get the final list —
+   * never read these two on their own for display. (Replaces the old
+   * amenitiesOverride, which REPLACED the building list entirely; the
+   * migration converts old overrides into added/removed.) */
+  amenitiesAdded?: string[];
+  amenitiesRemoved?: string[];
   images: string[];
   description?: string;
   /** Internal-only free-text notes for admin/sale — e.g. "khách hẹn xem

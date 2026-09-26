@@ -2,8 +2,8 @@
 // types/constants/helpers only, no DB access (that lives in
 // src/lib/amenityCatalog.ts, server-only).
 //
-// Design decision: Property.amenitiesShared / Room.amenitiesOverride keep
-// storing amenity NAMES (string[]), exactly as before — not catalog ids.
+// Design decision: Property.amenitiesShared / Room.amenitiesAdded /
+// Room.amenitiesRemoved keep storing amenity NAMES (string[]), exactly as before — not catalog ids.
 // Every display path (room card tags, detail page, PDF export, search,
 // AI 2 parity) keeps working unchanged. What changes is the invariant: every
 // name saved on a property/room is canonicalized against the catalog first
@@ -215,4 +215,41 @@ export function groupAmenities(list: DisplayAmenity[]): AmenityGroupDisplay[] {
     label: g.label,
     items: list.filter((a) => a.group === g.key),
   })).filter((g) => g.items.length > 0);
+}
+
+/** A room's final amenity list = the building's list, minus what this room
+ * removed, plus what it added (round 12e). Order: building order first, then
+ * room-only additions. Case/diacritics-insensitive, de-duplicated. This is
+ * the ONLY place that combines the two — every display path (cards, detail
+ * page, PDF export, homepage filter) must go through it. */
+export function effectiveAmenities(
+  room: { amenitiesAdded?: string[] | null; amenitiesRemoved?: string[] | null },
+  buildingAmenities: string[]
+): string[] {
+  const removed = new Set((room.amenitiesRemoved ?? []).map(normalizeAmenityName));
+  const seen = new Set<string>();
+  const out: string[] = [];
+  const inherited = buildingAmenities.filter((n) => !removed.has(normalizeAmenityName(n)));
+  for (const name of [...inherited, ...(room.amenitiesAdded ?? [])]) {
+    const key = normalizeAmenityName(name);
+    if (!key || seen.has(key)) continue;
+    seen.add(key);
+    out.push(name);
+  }
+  return out;
+}
+
+/** Turns a full desired list back into the added/removed difference against
+ * the building — used by the migration (old overrides) and to keep the
+ * stored difference minimal. */
+export function diffAmenities(
+  desired: string[],
+  buildingAmenities: string[]
+): { added: string[]; removed: string[] } {
+  const want = new Set(desired.map(normalizeAmenityName));
+  const building = new Set(buildingAmenities.map(normalizeAmenityName));
+  return {
+    added: desired.filter((n) => !building.has(normalizeAmenityName(n))),
+    removed: buildingAmenities.filter((n) => !want.has(normalizeAmenityName(n))),
+  };
 }

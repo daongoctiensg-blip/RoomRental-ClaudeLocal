@@ -6,7 +6,7 @@ import RoomCardPhotoCarousel from "@/components/RoomCardPhotoCarousel";
 import { AmenityIcon } from "@/components/AmenityIcon";
 import SaveRoomButton from "@/components/SaveRoomButton";
 import { formatVnd, telHref, zaloHref } from "@/lib/format";
-import { type Amenity, normalizeAmenityName } from "@/lib/amenities";
+import { type Amenity, effectiveAmenities, normalizeAmenityName } from "@/lib/amenities";
 
 // "Mới đăng" quick tag — round 11. A room created within this many days of
 // today gets a small "new listing" badge on its card, matching what most
@@ -39,7 +39,7 @@ export default function RoomCard({
   catalog: Amenity[];
 }) {
   const address = room.property.addressNew;
-  const amenities = room.amenitiesOverride ?? room.property.amenitiesShared;
+  const amenities = effectiveAmenities(room, room.property.amenitiesShared);
   // Quick tags — at-a-glance amenity badges so a customer doesn't have to
   // open every room to see if it has A/C, a washing machine, etc. Round 12:
   // driven by the amenity catalog — only items the admin marked "phổ

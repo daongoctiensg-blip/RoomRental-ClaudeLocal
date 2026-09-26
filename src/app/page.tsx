@@ -10,7 +10,7 @@ import SortControl from "@/components/SortControl";
 import LogoutButton from "@/components/LogoutButton";
 import type { RoomStatus } from "@/types";
 import { ROOM_STATUSES } from "@/types";
-import { roomHasAllAmenities } from "@/lib/amenities";
+import { effectiveAmenities, roomHasAllAmenities } from "@/lib/amenities";
 import { listAmenities } from "@/lib/amenityCatalog";
 import SavedRoomsLink from "@/components/SavedRoomsLink";
 
@@ -129,7 +129,7 @@ export default async function HomePage({
     selectedAmenities.length > 0
       ? allRooms.filter((r) =>
           roomHasAllAmenities(
-            r.amenitiesOverride ?? r.property.amenitiesShared,
+            effectiveAmenities(r, r.property.amenitiesShared),
             selectedAmenities
           )
         )

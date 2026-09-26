@@ -3,9 +3,10 @@
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { apiUrl } from "@/lib/basePath";
-import AmenityPicker from "@/components/AmenityPicker";
+import RoomAmenitiesEditor from "@/components/RoomAmenitiesEditor";
 import ImageListEditor from "@/components/ImageListEditor";
 import type { Property, Room, SubUnit } from "@/types";
+import { normalizeAmenityName } from "@/lib/amenities";
 
 export default function RoomForm({
   room,
@@ -31,9 +32,14 @@ export default function RoomForm({
   const [description, setDescription] = useState(room?.description ?? "");
   const [internalNotes, setInternalNotes] = useState(room?.internalNotes ?? "");
   const [images, setImages] = useState<string[]>(room?.images ?? []);
-  const [amenitiesOverride, setAmenitiesOverride] = useState<string[]>(
-    room?.amenitiesOverride ?? []
-  );
+  // Round 12e: the room inherits its building's amenities and stores only
+  // the difference (see RoomAmenitiesEditor / effectiveAmenities).
+  const [amenityDelta, setAmenityDelta] = useState<{ added: string[]; removed: string[] }>({
+    added: room?.amenitiesAdded ?? [],
+    removed: room?.amenitiesRemoved ?? [],
+  });
+  const selectedProperty = properties.find((p) => p.id === propertyId);
+  const buildingAmenities = selectedProperty?.amenitiesShared ?? [];
   const [subUnits, setSubUnits] = useState<SubUnit[]>(room?.subUnits ?? []);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -58,8 +64,16 @@ export default function RoomForm({
       description: description || null,
       internalNotes: internalNotes || null,
       images,
-      // Empty = use the property's shared amenities (stored as NULL).
-      amenitiesOverride: amenitiesOverride.length > 0 ? amenitiesOverride : null,
+      // Empty lists = inherit the building's amenities as-is (stored NULL).
+      // Stale "removed" names that the (possibly changed) building doesn't
+      // have are dropped — they'd do nothing now but would silently hide
+      // that amenity if the building ever added it.
+      amenitiesAdded: amenityDelta.added.length ? amenityDelta.added : null,
+      amenitiesRemoved: (() => {
+        const keys = new Set(buildingAmenities.map(normalizeAmenityName));
+        const r = amenityDelta.removed.filter((n) => keys.has(normalizeAmenityName(n)));
+        return r.length ? r : null;
+      })(),
       subUnits: subUnits.length > 0 ? subUnits : null,
       isActive: room?.isActive ?? true,
     };
@@ -197,13 +211,15 @@ export default function RoomForm({
           <span className="text-sm font-medium text-slate-700">Ảnh phòng</span>
           <ImageListEditor value={images} onChange={setImages} />
         </div>
-        <label className="mt-4 flex flex-col gap-1">
-          <span className="text-sm font-medium text-slate-700">
-            Tiện ích riêng của phòng (để trống = dùng tiện ích chung của nhà)
-          </span>
-        </label>
-        <div className="mt-1">
-          <AmenityPicker value={amenitiesOverride} onChange={setAmenitiesOverride} />
+        <div className="mt-4 flex flex-col gap-1">
+          <span className="text-sm font-medium text-slate-700">Tiện ích của phòng</span>
+          <RoomAmenitiesEditor
+            buildingName={selectedProperty?.name}
+            buildingAmenities={buildingAmenities}
+            added={amenityDelta.added}
+            removed={amenityDelta.removed}
+            onChange={setAmenityDelta}
+          />
         </div>
       </section>
 

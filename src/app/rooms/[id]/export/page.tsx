@@ -5,6 +5,7 @@ import { isAdminSession } from "@/lib/apiAuth";
 import RoomPhoto from "@/components/RoomPhoto";
 import PrintButton from "@/components/PrintButton";
 import { formatVnd, telHref, zaloHref } from "@/lib/format";
+import { effectiveAmenities } from "@/lib/amenities";
 
 export const dynamic = "force-dynamic";
 
@@ -38,7 +39,7 @@ export default async function RoomExportPage({
 
   const room = toPublicRoom(fullRoom);
   const property = room.property;
-  const amenities = room.amenitiesOverride ?? property.amenitiesShared;
+  const amenities = effectiveAmenities(room, property.amenitiesShared);
   const fee = getCurrentUtilityFee(property);
   const photos = room.images.length > 0 ? room.images : [undefined];
 

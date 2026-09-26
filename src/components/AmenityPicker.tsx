@@ -25,10 +25,14 @@ export default function AmenityPicker({
   value,
   onChange,
   placeholder = "Gõ để tìm, hoặc gõ tên mới rồi Enter để thêm…",
+  hideNames = [],
 }: {
   value: string[];
   onChange: (next: string[]) => void;
   placeholder?: string;
+  /** Catalog items not to suggest (e.g. amenities the room already inherits
+   * from its building — round 12e). */
+  hideNames?: string[];
 }) {
   const [catalog, setCatalog] = useState<Amenity[]>([]);
   const [query, setQuery] = useState("");
@@ -73,6 +77,7 @@ export default function AmenityPicker({
     [catalog]
   );
   const selectedKeys = useMemo(() => new Set(value.map(normalizeAmenityName)), [value]);
+  const hiddenKeys = useMemo(() => new Set(hideNames.map(normalizeAmenityName)), [hideNames]);
 
   const qKey = normalizeAmenityName(query);
   const suggestions = useMemo(
@@ -80,9 +85,10 @@ export default function AmenityPicker({
       catalog.filter(
         (a) =>
           !selectedKeys.has(normalizeAmenityName(a.name)) &&
+          !hiddenKeys.has(normalizeAmenityName(a.name)) &&
           (!qKey || normalizeAmenityName(a.name).includes(qKey))
       ),
-    [catalog, selectedKeys, qKey]
+    [catalog, selectedKeys, hiddenKeys, qKey]
   );
   const exactMatch = qKey ? lookup.get(qKey) : undefined;
   const canCreate = qKey.length > 0 && !exactMatch;

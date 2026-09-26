@@ -81,7 +81,14 @@ CREATE TABLE IF NOT EXISTS rooms (
   status_updated_at VARCHAR(30) NOT NULL,
   current_deposit JSON NULL,
   sub_units JSON NULL,
+  -- amenities_override: LEGACY (before round 12e it REPLACED the property's
+  -- list). No longer read or written by the app; migrate.ts converts any
+  -- non-NULL value into amenities_added/amenities_removed and clears it.
   amenities_override JSON NULL,
+  -- Round 12e: a room inherits properties.amenities_shared and stores only
+  -- the difference (see effectiveAmenities in src/lib/amenities.ts).
+  amenities_added JSON NULL,
+  amenities_removed JSON NULL,
   images JSON NOT NULL,
   description TEXT NULL,
   -- internal_notes: admin/sale-only free text (round 11), separate from the
