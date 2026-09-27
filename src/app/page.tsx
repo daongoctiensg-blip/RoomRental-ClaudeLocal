@@ -8,6 +8,7 @@ import QuickBuildingFilter from "@/components/QuickBuildingFilter";
 import MapToggle from "@/components/MapToggle";
 import SortControl from "@/components/SortControl";
 import LogoutButton from "@/components/LogoutButton";
+import { haversineDistanceKm, NEARBY_RADIUS_KM } from "@/lib/geocode";
 import { matchesFilters, parseFilterState, parseNear, toFacetRoom } from "@/lib/roomFilters";
 import { listAmenities } from "@/lib/amenityCatalog";
 import SavedRoomsLink from "@/components/SavedRoomsLink";
@@ -48,7 +49,7 @@ export default async function HomePage({
   // being absent, so "show everything" stays reachable and doesn't get
   // silently overridden back to the default on the next render.
   const cityRaw = get("city");
-  const city = cityRaw === undefined ? DEFAULT_CITY : cityRaw === "all" ? undefined : cityRaw;
+  const cityChoice = cityRaw === undefined ? DEFAULT_CITY : cityRaw === "all" ? undefined : cityRaw;
   const ward = get("ward");
   const district = get("district");
   const sortParam = get("sort");
@@ -58,6 +59,8 @@ export default async function HomePage({
       : "default";
   // "Phòng gần vị trí của tôi" — round 13 (mobile search screen).
   const near = parseNear(get("near")) ?? undefined;
+  // "Near me" is a location on its own — the city dropdown doesn't narrow it.
+  const city = near ? undefined : cityChoice;
   // "Khu vực nhanh" — round 10, §12. Same propertyId param GET /api/rooms
   // already understands.
   const propertyId = get("propertyId");
@@ -107,6 +110,12 @@ export default async function HomePage({
   }
   const mapProperties = properties
     .filter((p) => p.isActive && p.lat != null && p.lng != null)
+    // "Phòng gần tôi" (round 14): only buildings inside the radius.
+    .filter(
+      (p) =>
+        !near ||
+        haversineDistanceKm(near, { lat: p.lat as number, lng: p.lng as number }) <= NEARBY_RADIUS_KM
+    )
     .map((p) => ({
       id: p.id,
       name: p.name,
@@ -257,7 +266,7 @@ export default async function HomePage({
             </Link>
           )}
         </div>
-        <MobileFloatingBar properties={mapProperties} />
+        <MobileFloatingBar properties={mapProperties} near={near} radiusKm={NEARBY_RADIUS_KM} />
       </div>
 
       <main className="mx-auto hidden w-full max-w-[1600px] flex-1 px-4 py-6 sm:px-6 md:block lg:px-10">
@@ -273,7 +282,7 @@ export default async function HomePage({
           />
         </div>
 
-        <MapToggle properties={mapProperties} />
+        <MapToggle properties={mapProperties} near={near} radiusKm={NEARBY_RADIUS_KM} />
 
         <div className="grid grid-cols-1 gap-6 lg:grid-cols-[240px_1fr]">
           <aside className="lg:sticky lg:top-6 lg:self-start">

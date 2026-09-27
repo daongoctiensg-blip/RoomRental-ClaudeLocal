@@ -2,7 +2,8 @@
 
 import { useCallback, useEffect, useState } from "react";
 import Link from "next/link";
-import { Heart, Map as MapIcon, X } from "lucide-react";
+import { Heart, LocateFixed, Map as MapIcon, X } from "lucide-react";
+import { useNearMe } from "@/lib/useNearMe";
 import PropertyMap, { type MapProperty } from "@/components/PropertyMap";
 import FullScreen from "@/components/mobile/FullScreen";
 import { getSavedRoomIds, onSavedRoomsChange } from "@/lib/savedRooms";
@@ -10,7 +11,16 @@ import { getSavedRoomIds, onSavedRoomsChange } from "@/lib/savedRooms";
 /** Dark floating pill at the bottom of the mobile homepage — round 13:
  * "Bản đồ | Đã lưu (N)". The map opens full screen (same Leaflet map as
  * the desktop toggle); "Đã lưu" opens this browser's saved rooms. */
-export default function MobileFloatingBar({ properties }: { properties: MapProperty[] }) {
+export default function MobileFloatingBar({
+  properties,
+  near,
+  radiusKm,
+}: {
+  properties: MapProperty[];
+  near?: { lat: number; lng: number };
+  radiusKm: number;
+}) {
+  const { locate, clear, locating, error } = useNearMe();
   const [ids, setIds] = useState<string[]>([]);
   const [mapOpen, setMapOpen] = useState(false);
   const closeMap = useCallback(() => setMapOpen(false), []);
@@ -57,8 +67,41 @@ export default function MobileFloatingBar({ properties }: { properties: MapPrope
               <X className="h-[22px] w-[22px]" aria-hidden />
             </button>
           </div>
-          <div className="flex-grow p-2 [&>div]:h-full">
-            <PropertyMap properties={properties} />
+          <div className="flex flex-none flex-wrap items-center gap-2 px-3 py-2">
+            {near ? (
+              <button
+                type="button"
+                onClick={clear}
+                className="inline-flex h-9 items-center gap-1.5 rounded-full border-[1.5px] border-[#2f6fed] bg-[#eaf1ff] px-3 text-[13px] font-semibold text-[#1d4fbf]"
+              >
+                <LocateFixed className="h-4 w-4" aria-hidden />
+                Trong {radiusKm} km quanh bạn
+                <X className="h-3.5 w-3.5" aria-hidden />
+              </button>
+            ) : (
+              <button
+                type="button"
+                onClick={() => locate()}
+                disabled={locating}
+                className="inline-flex h-9 items-center gap-1.5 rounded-full border border-[#dfe3ea] px-3 text-[13px] font-semibold text-[#1d4fbf] disabled:opacity-60"
+              >
+                <LocateFixed className="h-4 w-4" aria-hidden />
+                {locating ? "Đang lấy vị trí…" : `Phòng gần tôi (${radiusKm} km)`}
+              </button>
+            )}
+            <span className="text-xs text-[#5b6475]">
+              {properties.length} tòa nhà · bấm ghim để xem phòng
+            </span>
+            {error ? <p className="w-full text-xs text-rose-600">{error}</p> : null}
+          </div>
+          <div className="min-h-0 flex-grow px-2 pb-2">
+            <PropertyMap
+              key={near ? `${near.lat},${near.lng}` : "all"}
+              properties={properties}
+              userLocation={near}
+              radiusKm={radiusKm}
+              className="h-full"
+            />
           </div>
         </FullScreen>
       ) : null}

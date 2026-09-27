@@ -240,6 +240,15 @@ function validatePropertyMoneyFields(input: {
   depositCancellationPolicy?: Partial<DepositCancellationPolicy>;
   commissionPolicy?: CommissionTier[];
 }): string | null {
+  // Round 14: coordinates can now be typed by an admin.
+  const la = (input as { lat?: unknown }).lat;
+  const ln = (input as { lng?: unknown }).lng;
+  if (la != null && (typeof la !== "number" || !Number.isFinite(la) || Math.abs(la) > 90)) {
+    return "Vĩ độ (lat) không hợp lệ.";
+  }
+  if (ln != null && (typeof ln !== "number" || !Number.isFinite(ln) || Math.abs(ln) > 180)) {
+    return "Kinh độ (lng) không hợp lệ.";
+  }
   const dp = input.depositPolicy;
   if (dp) {
     if (typeof dp.holdAmount === "number" && dp.holdAmount < 0) {

@@ -23,7 +23,19 @@ export type MapProperty = {
  * Properties with no lat/lng (geocoding miss) are simply skipped — best
  * effort, same as the rest of the app treats missing coordinates.
  */
-export default function PropertyMap({ properties }: { properties: MapProperty[] }) {
+export default function PropertyMap({
+  properties,
+  userLocation,
+  radiusKm,
+  className = "h-[420px]",
+}: {
+  properties: MapProperty[];
+  /** Round 14: the visitor's position ("Phòng gần tôi"). Drawn as a blue
+   * dot with a `radiusKm` circle, and the map frames that circle. */
+  userLocation?: { lat: number; lng: number };
+  radiusKm?: number;
+  className?: string;
+}) {
   const containerRef = useRef<HTMLDivElement | null>(null);
   const mapRef = useRef<LeafletMap | null>(null);
   const [loadError, setLoadError] = useState<string | null>(null);
@@ -92,8 +104,32 @@ export default function PropertyMap({ properties }: { properties: MapProperty[] 
           markers.push([p.lat, p.lng]);
         }
 
-        if (markers.length > 1) {
+        // Round 14: always frame what matters. Before, the map opened on the
+        // first property at zoom 14 (or central Q1 when no property had
+        // coordinates) and a 2nd+ building could sit off-screen.
+        if (userLocation) {
+          const here: [number, number] = [userLocation.lat, userLocation.lng];
+          const circle = L.circle(here, {
+            radius: (radiusKm ?? 2) * 1000,
+            color: "#2f6fed",
+            weight: 1.5,
+            fillColor: "#2f6fed",
+            fillOpacity: 0.08,
+          }).addTo(map);
+          L.circleMarker(here, {
+            radius: 8,
+            color: "#ffffff",
+            weight: 3,
+            fillColor: "#2f6fed",
+            fillOpacity: 1,
+          })
+            .addTo(map)
+            .bindPopup("<strong>Vị trí của bạn</strong>");
+          map.fitBounds(circle.getBounds(), { padding: [16, 16] });
+        } else if (markers.length > 1) {
           map.fitBounds(markers, { padding: [32, 32] });
+        } else if (markers.length === 1) {
+          map.setView(markers[0], 16);
         }
       } catch {
         if (!cancelled) setLoadError("Không tải được bản đồ. Vui lòng thử lại sau.");
@@ -114,7 +150,7 @@ export default function PropertyMap({ properties }: { properties: MapProperty[] 
 
   if (loadError) {
     return (
-      <div className="flex h-[420px] items-center justify-center rounded-xl bg-white text-sm text-slate-400 shadow-sm ring-1 ring-black/5">
+      <div className={`flex ${className} items-center justify-center rounded-xl bg-white text-sm text-slate-400 shadow-sm ring-1 ring-black/5`}>
         {loadError}
       </div>
     );
@@ -123,7 +159,7 @@ export default function PropertyMap({ properties }: { properties: MapProperty[] 
   return (
     <div
       ref={containerRef}
-      className="h-[420px] w-full overflow-hidden rounded-xl shadow-sm ring-1 ring-black/5"
+      className={`${className} w-full overflow-hidden rounded-xl shadow-sm ring-1 ring-black/5`}
     />
   );
 }

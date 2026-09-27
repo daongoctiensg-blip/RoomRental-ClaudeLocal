@@ -9,12 +9,15 @@ import vnHcmDistricts from "@/data/vn-hcm-districts.json";
 import SearchableSelect from "@/components/SearchableSelect";
 import AmenityPicker from "@/components/AmenityPicker";
 import ImageListEditor from "@/components/ImageListEditor";
+import { formatCoordinates, parseCoordinates } from "@/lib/coords";
 import type { CommissionTier, Property, UtilityFeeVersion } from "@/types";
 
 type FormState = {
   name: string;
   addressNew: string;
   addressOld: string;
+  /** Round 14: "lat, lng" or a pasted Google Maps link. */
+  coords: string;
   city: string;
   ward: string;
   district: string;
@@ -58,6 +61,7 @@ function toFormState(property?: Property): FormState {
     name: property?.name ?? "",
     addressNew: property?.addressNew ?? "",
     addressOld: property?.addressOld ?? "",
+    coords: formatCoordinates(property?.lat, property?.lng),
     city: property?.city ?? "",
     ward: property?.ward ?? "",
     district: property?.district ?? "",
@@ -158,7 +162,17 @@ export default function PropertyForm({ property }: { property?: Property }) {
     setSaving(true);
     setError(null);
 
+    // Round 14: an empty box keeps today's behavior (auto-lookup from the
+    // address when it changes); anything typed must parse.
+    const coords = parseCoordinates(form.coords);
+    if (form.coords.trim() && !coords) {
+      setSaving(false);
+      setError("Tọa độ không hợp lệ. Dán dạng “10.7339, 106.7191” hoặc link Google Maps.");
+      return;
+    }
+
     const payload = {
+      ...(coords ? { lat: coords.lat, lng: coords.lng } : {}),
       name: form.name,
       addressNew: form.addressNew,
       addressOld: form.addressOld || undefined,
@@ -299,6 +313,11 @@ export default function PropertyForm({ property }: { property?: Property }) {
             className={inputClass}
           />
         </Field>
+        <CoordinatesField
+          value={form.coords}
+          onChange={(v) => update("coords", v)}
+          address={[form.addressNew, form.addressOld].filter(Boolean).join(", ")}
+        />
         <Field label="Số điện thoại liên hệ (công khai — khách gọi/Zalo số này)">
           <input
             required
@@ -663,6 +682,70 @@ function FieldGroup({ label, children }: { label: string; children: React.ReactN
       <span className="text-sm font-medium text-slate-700">{label}</span>
       {children}
     </div>
+  );
+}
+
+/** "Vị trí trên bản đồ" — round 14. Coordinates drive the homepage map and
+ * "Phòng gần tôi (2 km)"; a building without them is invisible to both.
+ * Auto-lookup (OpenStreetMap) often misses post-2025 ward names, so the
+ * admin can paste the pin from Google Maps instead. */
+function CoordinatesField({
+  value,
+  onChange,
+  address,
+}: {
+  value: string;
+  onChange: (v: string) => void;
+  address: string;
+}) {
+  const parsed = parseCoordinates(value);
+  const mapsSearch = `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(address)}`;
+  return (
+    <FieldGroup label="Vị trí trên bản đồ (tọa độ)">
+      <input
+        value={value}
+        onChange={(e) => onChange(e.target.value)}
+        placeholder="VD: 10.7339, 106.7191 — hoặc dán link Google Maps"
+        aria-label="Tọa độ tòa nhà"
+        className={inputClass}
+      />
+      <p className="text-xs text-slate-500">
+        {parsed ? (
+          <span className="text-emerald-700">
+            ✓ {parsed.lat.toFixed(5)}, {parsed.lng.toFixed(5)} ·{" "}
+            <a
+              href={`https://www.google.com/maps?q=${parsed.lat},${parsed.lng}`}
+              target="_blank"
+              rel="noreferrer"
+              className="font-medium text-[color:var(--color-accent)] hover:underline"
+            >
+              Kiểm tra trên Google Maps
+            </a>
+          </span>
+        ) : value.trim() ? (
+          <span className="text-rose-600">Chưa đọc được tọa độ từ nội dung này.</span>
+        ) : (
+          <span className="text-amber-700">
+            Chưa có tọa độ — tòa nhà sẽ không hiện trên bản đồ và mục “Phòng gần tôi”. Hệ thống sẽ
+            thử tự tìm theo địa chỉ khi lưu.
+          </span>
+        )}{" "}
+        {address ? (
+          <>
+            Cách lấy: mở{" "}
+            <a
+              href={mapsSearch}
+              target="_blank"
+              rel="noreferrer"
+              className="font-medium text-[color:var(--color-accent)] hover:underline"
+            >
+              Google Maps
+            </a>
+            , nhấn giữ (hoặc chuột phải) vào đúng tòa nhà, bấm vào dãy số tọa độ để copy rồi dán vào đây.
+          </>
+        ) : null}
+      </p>
+    </FieldGroup>
   );
 }
 

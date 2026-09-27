@@ -5,12 +5,30 @@ import StatusBadge from "@/components/StatusBadge";
 import StatusQuickSwitch from "@/components/StatusQuickSwitch";
 import DuplicateRoomButton from "@/components/DuplicateRoomButton";
 import { formatVnd } from "@/lib/format";
+import type { RoomStatus } from "@/types";
 import { MoreHorizontal, Pencil } from "lucide-react";
 import AdminRoomSearch from "@/components/mobile/AdminRoomSearch";
 
 export const dynamic = "force-dynamic";
 
-export default async function AdminDashboardPage() {
+// Round 14: the KPI cards are links that filter the room list below.
+// "occupied" = the "Tỉ lệ lấp đầy" card (đã cọc + đã cho thuê).
+const KPI_FILTERS: Record<string, { label: string; statuses: RoomStatus[] }> = {
+  available: { label: "Còn trống", statuses: ["available"] },
+  deposited: { label: "Đã cọc", statuses: ["deposited"] },
+  sold: { label: "Đã cho thuê", statuses: ["sold"] },
+  renovating: { label: "Đang sửa chữa", statuses: ["renovating"] },
+  occupied: { label: "Đang lấp đầy (đã cọc + đã cho thuê)", statuses: ["deposited", "sold"] },
+};
+
+export default async function AdminDashboardPage({
+  searchParams,
+}: {
+  searchParams: Promise<Record<string, string | string[] | undefined>>;
+}) {
+  const sp = await searchParams;
+  const viewKey = typeof sp.view === "string" && sp.view in KPI_FILTERS ? sp.view : null;
+  const view = viewKey ? KPI_FILTERS[viewKey] : null;
   const [properties, rooms] = await Promise.all([
     listProperties({ includeInactive: true }),
     // includeInactiveProperties: an unlisted (deactivated) property's rooms
@@ -19,8 +37,16 @@ export default async function AdminDashboardPage() {
     listRooms(undefined, { includeInactiveProperties: true }),
   ]);
 
+  // With a KPI filter on, only active rooms in those statuses are listed
+  // (the same rooms the card counted).
+  const shownRooms = view
+    ? rooms.filter((r) => r.isActive && view.statuses.includes(r.status))
+    : rooms;
+  const shownProperties = view
+    ? properties.filter((p) => shownRooms.some((r) => r.propertyId === p.id))
+    : properties;
   const roomsByProperty = new Map<string, typeof rooms>();
-  for (const room of rooms) {
+  for (const room of shownRooms) {
     const list = roomsByProperty.get(room.propertyId) ?? [];
     list.push(room);
     roomsByProperty.set(room.propertyId, list);
@@ -48,30 +74,37 @@ export default async function AdminDashboardPage() {
       {/* Mobile KPI strip — round 13, scrolls sideways. */}
       <div className="-mx-4 flex gap-2 overflow-x-auto px-4 [scrollbar-width:none] md:hidden">
         {[
-          { k: "Tổng phòng", v: String(totalRooms), c: "text-[#16233b]" },
-          { k: "Còn trống", v: String(availableCount), c: "text-[#15803d]" },
-          { k: "Đã cọc", v: String(depositedCount), c: "text-[#b45309]" },
-          { k: "Đã cho thuê", v: String(soldCount), c: "text-[#475569]" },
-          { k: "Sửa chữa", v: String(renovatingCount), c: "text-[#b91c1c]" },
-          { k: "Lấp đầy", v: `${occupancyRate}%`, c: "text-[#1d4fbf]" },
-        ].map((x) => (
-          <div
-            key={x.k}
-            className="flex min-w-[92px] flex-none flex-col gap-0.5 rounded-xl border border-[#e8ebf1] bg-white px-3 py-2.5"
-          >
-            <span className="text-[11px] text-[#5b6475]">{x.k}</span>
-            <span className={`text-[22px] font-extrabold ${x.c}`}>{x.v}</span>
-          </div>
-        ))}
+          { k: "Tổng phòng", v: String(totalRooms), c: "text-[#16233b]!", view: null },
+          { k: "Còn trống", v: String(availableCount), c: "text-[#15803d]!", view: "available" },
+          { k: "Đã cọc", v: String(depositedCount), c: "text-[#b45309]!", view: "deposited" },
+          { k: "Đã cho thuê", v: String(soldCount), c: "text-[#475569]!", view: "sold" },
+          { k: "Sửa chữa", v: String(renovatingCount), c: "text-[#b91c1c]!", view: "renovating" },
+          { k: "Lấp đầy", v: `${occupancyRate}%`, c: "text-[#1d4fbf]!", view: "occupied" },
+        ].map((x) => {
+          const on = x.view === viewKey;
+          return (
+            <Link
+              key={x.k}
+              href={x.view ? `/admin?view=${x.view}` : "/admin"}
+              aria-current={on ? "page" : undefined}
+              className={`flex min-w-[92px] flex-none flex-col gap-0.5 rounded-xl border bg-white px-3 py-2.5 ${
+                on ? "border-[#2f6fed] ring-2 ring-[#2f6fed]/30" : "border-[#e8ebf1]"
+              }`}
+            >
+              <span className="text-[11px] text-[#5b6475]">{x.k}</span>
+              <span className={`text-[22px] font-extrabold ${x.c}`}>{x.v}</span>
+            </Link>
+          );
+        })}
       </div>
 
       <div className="hidden grid-cols-2 gap-3 sm:grid-cols-3 md:grid lg:grid-cols-6">
-        <KpiCard label="Tổng số phòng" value={String(totalRooms)} />
-        <KpiCard label="Còn trống" value={String(availableCount)} accent="text-[color:var(--color-available)]" />
-        <KpiCard label="Đã cọc" value={String(depositedCount)} accent="text-[color:var(--color-deposited)]" />
-        <KpiCard label="Đã cho thuê" value={String(soldCount)} accent="text-[color:var(--color-sold)]" />
-        <KpiCard label="Đang sửa chữa" value={String(renovatingCount)} accent="text-[color:var(--color-renovating)]" />
-        <KpiCard label="Tỉ lệ lấp đầy" value={`${occupancyRate}%`} accent="text-[color:var(--color-accent-dark)]" />
+        <KpiCard label="Tổng số phòng" value={String(totalRooms)} view={null} active={!view} />
+        <KpiCard label="Còn trống" value={String(availableCount)} accent="text-[color:var(--color-available)]" view="available" active={viewKey === "available"} />
+        <KpiCard label="Đã cọc" value={String(depositedCount)} accent="text-[color:var(--color-deposited)]" view="deposited" active={viewKey === "deposited"} />
+        <KpiCard label="Đã cho thuê" value={String(soldCount)} accent="text-[color:var(--color-sold)]" view="sold" active={viewKey === "sold"} />
+        <KpiCard label="Đang sửa chữa" value={String(renovatingCount)} accent="text-[color:var(--color-renovating)]" view="renovating" active={viewKey === "renovating"} />
+        <KpiCard label="Tỉ lệ lấp đầy" value={`${occupancyRate}%`} accent="text-[color:var(--color-accent-dark)]" view="occupied" active={viewKey === "occupied"} />
       </div>
 
       <div className="hidden justify-end md:flex">
@@ -83,8 +116,19 @@ export default async function AdminDashboardPage() {
         </Link>
       </div>
 
+      {view ? (
+        <div className="flex flex-wrap items-center justify-between gap-2 rounded-xl border border-[#c7d7fb] bg-[#eaf1ff] px-4 py-2.5 text-sm text-[#1d4fbf]">
+          <span>
+            Đang lọc: <strong>{view.label}</strong> · {shownRooms.length} phòng
+          </span>
+          <Link href="/admin" className="font-semibold text-[#1d4fbf] hover:underline">
+            Bỏ lọc ✕
+          </Link>
+        </div>
+      ) : null}
+
       <AdminRoomSearch>
-      {properties.map((property) => (
+      {shownProperties.map((property) => (
         <section
           key={property.id}
           data-room-group
@@ -101,6 +145,14 @@ export default async function AdminDashboardPage() {
                 ) : null}
               </h2>
               <p className="hidden text-sm text-slate-500 md:block">{property.addressNew}</p>
+              {property.lat == null || property.lng == null ? (
+                <Link
+                  href={`/admin/properties/${property.id}`}
+                  className="mt-1 inline-block rounded-md bg-amber-50 px-2 py-0.5 text-xs font-medium text-amber-800! ring-1 ring-amber-200"
+                >
+                  ⚠ Chưa có tọa độ — không hiện trên bản đồ / “Phòng gần tôi”. Bấm để thêm.
+                </Link>
+              ) : null}
             </div>
             <Link
               href={`/admin/properties/${property.id}`}
@@ -264,6 +316,12 @@ export default async function AdminDashboardPage() {
       ))}
       </AdminRoomSearch>
 
+      {view && shownProperties.length === 0 ? (
+        <div className="rounded-xl bg-white p-8 text-center text-slate-500 shadow-sm ring-1 ring-black/5">
+          Không có phòng nào ở trạng thái “{view.label}”.
+        </div>
+      ) : null}
+
       {properties.length === 0 ? (
         <div className="rounded-xl bg-white p-8 text-center text-slate-500 shadow-sm ring-1 ring-black/5">
           Chưa có nhà nào.{" "}
@@ -280,15 +338,27 @@ function KpiCard({
   label,
   value,
   accent,
+  view,
+  active,
 }: {
   label: string;
   value: string;
   accent?: string;
+  /** Round 14: which ?view= this card filters to (null = show all). */
+  view: string | null;
+  active: boolean;
 }) {
   return (
-    <div className="rounded-xl bg-white p-4 shadow-sm ring-1 ring-black/5">
+    <Link
+      href={view ? `/admin?view=${view}` : "/admin"}
+      aria-current={active ? "page" : undefined}
+      title={view ? `Lọc danh sách: ${label}` : "Hiện tất cả phòng"}
+      className={`rounded-xl bg-white p-4 shadow-sm transition hover:shadow-md ${
+        active ? "ring-2 ring-[color:var(--color-accent)]" : "ring-1 ring-black/5"
+      }`}
+    >
       <p className="text-xs uppercase tracking-wide text-slate-400">{label}</p>
       <p className={`mt-1 text-2xl font-bold ${accent ?? "text-slate-900"}`}>{value}</p>
-    </div>
+    </Link>
   );
 }
