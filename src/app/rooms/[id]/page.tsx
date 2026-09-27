@@ -1,6 +1,6 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
-import { MapPin, Phone, MessageCircle, FileDown, Maximize2, DoorOpen, Users, Layers } from "lucide-react";
+import { ChevronLeft, MapPin, Phone, MessageCircle, FileDown, Maximize2, DoorOpen, Users, Layers } from "lucide-react";
 import {
   getRoom,
   getCurrentUtilityFee,
@@ -12,7 +12,12 @@ import { isAdminSession } from "@/lib/apiAuth";
 import { listAmenities } from "@/lib/amenityCatalog";
 import { effectiveAmenities, groupAmenities, resolveAmenities } from "@/lib/amenities";
 import { calculateMoveInCost } from "@/lib/moveInCost";
-import { findNearbyRooms } from "@/lib/nearbyRooms";
+import { findNearbyRooms, formatDistance } from "@/lib/nearbyRooms";
+import { NEARBY_RADIUS_KM } from "@/lib/geocode";
+import RoomPhoto from "@/components/RoomPhoto";
+import MobileDetailNav from "@/components/mobile/MobileDetailNav";
+import MobileShareButton from "@/components/mobile/MobileShareButton";
+import AllAmenitiesButton from "@/components/mobile/AllAmenitiesButton";
 import StatusBadge from "@/components/StatusBadge";
 import DepositCountdown from "@/components/DepositCountdown";
 import ShareButtons from "@/components/ShareButtons";
@@ -136,85 +141,9 @@ export default async function RoomDetailPage({
     </div>
   );
 
-  const sidebar = (
-    <>
-      <div className="overflow-hidden rounded-2xl bg-white shadow-md ring-1 ring-black/5">
-        <div className="bg-[color:var(--color-accent-light)] px-5 py-2.5 text-sm font-semibold text-[color:var(--color-accent-dark)]">
-          Giá thuê hàng tháng
-        </div>
-        <div className="p-5">
-          <div className="text-3xl font-bold text-[color:var(--color-accent-dark)]">
-            {formatVnd(room.priceMonthly)}
-            <span className="text-sm font-normal text-slate-500">/tháng</span>
-          </div>
-          <p className="mt-1 text-xs text-slate-500">Chưa gồm điện, nước, phí dịch vụ.</p>
-
-          <div className="mt-4 rounded-xl bg-slate-50 p-3">
-            <p className="font-semibold text-slate-800">Phòng {room.code}</p>
-            <ul className="mt-1.5 flex flex-col gap-1 text-sm text-slate-600">
-              {summary.map((s) => (
-                <li key={s.text} className="flex items-center gap-2">
-                  <s.icon className="h-4 w-4 text-slate-400" aria-hidden />
-                  {s.text}
-                </li>
-              ))}
-            </ul>
-          </div>
-
-          {moveIn.totalMoveIn > 0 ? (
-            <div className="mt-3 flex items-center justify-between gap-2 text-sm">
-              <span className="text-slate-600">
-                Tổng nhận phòng:{" "}
-                <strong className="text-slate-900">{formatVnd(moveIn.totalMoveIn)}</strong>
-              </span>
-              <RoomTabLink
-                tab="policy"
-                className="flex-none text-xs font-medium text-[color:var(--color-accent)] hover:underline"
-              >
-                Xem chi tiết
-              </RoomTabLink>
-            </div>
-          ) : null}
-
-          <div className="mt-4 flex flex-col gap-2">
-            <a
-              href={telHref(property.contactPhone)}
-              className="flex w-full items-center justify-center gap-2 rounded-lg bg-[color:var(--color-accent)] px-4 py-3 text-center text-sm font-semibold text-white shadow-sm hover:bg-[color:var(--color-accent-dark)]"
-            >
-              <Phone className="h-4 w-4" aria-hidden />
-              Gọi {property.contactPhone}
-            </a>
-            <div className="grid grid-cols-2 gap-2">
-              <a
-                href={zaloHref(property.contactPhone)}
-                target="_blank"
-                rel="noreferrer"
-                className="flex items-center justify-center gap-1.5 rounded-lg border border-slate-300 px-3 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-50"
-              >
-                <MessageCircle className="h-4 w-4" aria-hidden />
-                Nhắn Zalo
-              </a>
-              <Link
-                href={`/rooms/${room.id}/export`}
-                target="_blank"
-                className="flex items-center justify-center gap-1.5 rounded-lg border border-slate-300 px-3 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-50"
-              >
-                <FileDown className="h-4 w-4" aria-hidden />
-                Xuất PDF
-              </Link>
-            </div>
-          </div>
-          <ShareButtons
-            title={`Phòng ${room.code} · ${property.name}`}
-            phone={property.contactPhone}
-          />
-          <p className="mt-3 text-center text-xs text-slate-400">
-            Liên hệ để hẹn xem phòng trực tiếp
-          </p>
-        </div>
-      </div>
-
-            {admin ? (
+  // "Nội bộ (Sale)" — admin only, never rendered for customers. Shown in
+  // the desktop sidebar and, on mobile, after the "Vị trí" section.
+  const adminPanel = admin ? (
               <section className="rounded-xl border-2 border-amber-200 bg-amber-50 p-5">
                 <h2 className="mb-3 flex items-center gap-2 text-base font-semibold text-amber-900">
                   Nội bộ (Sale)
@@ -358,13 +287,399 @@ export default async function RoomDetailPage({
                   </Link>
                 </div>
               </section>
-            ) : null}
+  ) : null;
+
+  const sidebar = (
+    <>
+      <div className="overflow-hidden rounded-2xl bg-white shadow-md ring-1 ring-black/5">
+        <div className="bg-[color:var(--color-accent-light)] px-5 py-2.5 text-sm font-semibold text-[color:var(--color-accent-dark)]">
+          Giá thuê hàng tháng
+        </div>
+        <div className="p-5">
+          <div className="text-3xl font-bold text-[color:var(--color-accent-dark)]">
+            {formatVnd(room.priceMonthly)}
+            <span className="text-sm font-normal text-slate-500">/tháng</span>
+          </div>
+          <p className="mt-1 text-xs text-slate-500">Chưa gồm điện, nước, phí dịch vụ.</p>
+
+          <div className="mt-4 rounded-xl bg-slate-50 p-3">
+            <p className="font-semibold text-slate-800">Phòng {room.code}</p>
+            <ul className="mt-1.5 flex flex-col gap-1 text-sm text-slate-600">
+              {summary.map((s) => (
+                <li key={s.text} className="flex items-center gap-2">
+                  <s.icon className="h-4 w-4 text-slate-400" aria-hidden />
+                  {s.text}
+                </li>
+              ))}
+            </ul>
+          </div>
+
+          {moveIn.totalMoveIn > 0 ? (
+            <div className="mt-3 flex items-center justify-between gap-2 text-sm">
+              <span className="text-slate-600">
+                Tổng nhận phòng:{" "}
+                <strong className="text-slate-900">{formatVnd(moveIn.totalMoveIn)}</strong>
+              </span>
+              <RoomTabLink
+                tab="policy"
+                className="flex-none text-xs font-medium text-[color:var(--color-accent)] hover:underline"
+              >
+                Xem chi tiết
+              </RoomTabLink>
+            </div>
+          ) : null}
+
+          <div className="mt-4 flex flex-col gap-2">
+            <a
+              href={telHref(property.contactPhone)}
+              className="flex w-full items-center justify-center gap-2 rounded-lg bg-[color:var(--color-accent)] px-4 py-3 text-center text-sm font-semibold text-white shadow-sm hover:bg-[color:var(--color-accent-dark)]"
+            >
+              <Phone className="h-4 w-4" aria-hidden />
+              Gọi {property.contactPhone}
+            </a>
+            <div className="grid grid-cols-2 gap-2">
+              <a
+                href={zaloHref(property.contactPhone)}
+                target="_blank"
+                rel="noreferrer"
+                className="flex items-center justify-center gap-1.5 rounded-lg border border-slate-300 px-3 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-50"
+              >
+                <MessageCircle className="h-4 w-4" aria-hidden />
+                Nhắn Zalo
+              </a>
+              <Link
+                href={`/rooms/${room.id}/export`}
+                target="_blank"
+                className="flex items-center justify-center gap-1.5 rounded-lg border border-slate-300 px-3 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-50"
+              >
+                <FileDown className="h-4 w-4" aria-hidden />
+                Xuất PDF
+              </Link>
+            </div>
+          </div>
+          <ShareButtons
+            title={`Phòng ${room.code} · ${property.name}`}
+            phone={property.contactPhone}
+          />
+          <p className="mt-3 text-center text-xs text-slate-400">
+            Liên hệ để hẹn xem phòng trực tiếp
+          </p>
+        </div>
+      </div>
+
+      {adminPanel}
     </>
+  );
+
+  // ---- Mobile (< md) — round 13, Claude Design boards "4" + "5" ----
+  const cardCls = "scroll-mt-[104px] flex flex-col gap-3 rounded-[14px] bg-white p-4";
+  const mFact = (k: string, v: string) => (
+    <div key={k} className="flex flex-col gap-0.5">
+      <span className="text-[11px] font-semibold uppercase tracking-[0.4px] text-[#5b6475]">{k}</span>
+      <span className="text-[15px] font-semibold">{v}</span>
+    </div>
+  );
+  const mapsHref =
+    typeof property.lat === "number" && typeof property.lng === "number"
+      ? `https://www.google.com/maps/search/?api=1&query=${property.lat},${property.lng}`
+      : `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(property.addressNew)}`;
+  const overlayBtn =
+    "flex h-10 w-10 items-center justify-center rounded-full bg-white text-[#16233b] shadow-[0_2px_6px_rgba(0,0,0,0.15)]";
+  const mobile = (
+    <div className="flex flex-col bg-[#f4f6f9] pb-[104px] text-[#16233b] md:hidden">
+      <PhotoGallery
+        photos={room.images}
+        roomCode={room.code}
+        sidePanel={photoSidePanel}
+        variant="hero"
+        overlay={
+          <>
+            <Link href="/" aria-label="Quay lại danh sách" className={`absolute left-3 top-3 ${overlayBtn}`}>
+              <ChevronLeft className="h-[22px] w-[22px]" aria-hidden />
+            </Link>
+            <div className="absolute right-3 top-3 flex gap-2.5">
+              <MobileShareButton title={`Phòng ${room.code} · ${property.name}`} />
+              <SaveRoomButton roomId={room.id} size="lg" />
+            </div>
+          </>
+        }
+      />
+
+      <div className="relative -mt-4 flex flex-col gap-1.5 rounded-t-2xl bg-white px-4 pb-3 pt-4">
+        <div className="flex flex-wrap items-center gap-2">
+          <StatusBadge status={room.status} />
+          <span className="text-xs text-[#5b6475]">{property.name}</span>
+        </div>
+        <h1 className="text-2xl font-extrabold tracking-[-0.3px]">
+          Phòng {room.code}
+          {room.floor ? <span className="text-base font-normal text-[#5b6475]"> · {room.floor}</span> : null}
+        </h1>
+        <p className="flex items-start gap-1.5 text-[13px] text-[#5b6475]">
+          <MapPin className="mt-px h-[15px] w-[15px] flex-none" aria-hidden />
+          <span>
+            {property.addressNew} ·{" "}
+            <a href="#vi-tri" className="font-semibold text-[#1d4fbf]!">
+              Xem vị trí
+            </a>
+          </span>
+        </p>
+        {property.customerPromotion ? (
+          <p className="mt-1 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-[13px] text-amber-900">
+            <span className="font-semibold">Khuyến mãi: </span>
+            {property.customerPromotion}
+          </p>
+        ) : null}
+      </div>
+
+      {strip.length > 0 ? (
+        <ul className="flex gap-2.5 overflow-x-auto bg-white px-4 pb-3.5 pt-1 [scrollbar-width:none]">
+          {strip.map((s) => (
+            <li
+              key={s.name}
+              className="flex h-16 w-[76px] flex-none flex-col items-center justify-center gap-1 rounded-xl bg-[#f4f6f9] px-1 text-center text-[11px] leading-tight text-[#334155]"
+            >
+              <AmenityIcon icon={s.icon} className="h-5 w-5 text-[#2f6fed]" />
+              {s.name}
+            </li>
+          ))}
+        </ul>
+      ) : null}
+
+      <MobileDetailNav
+        roomId={room.id}
+        title={`Phòng ${room.code}${room.floor ? ` · ${room.floor}` : ""}`}
+        subtitle={property.name}
+      />
+
+      <div className="flex flex-col gap-3 p-3">
+        <section id="tong-quan" className={cardCls}>
+          <h2 className="text-[17px] font-bold">Tổng quan</h2>
+          <div className="grid grid-cols-2 gap-3">
+            {[
+              mFact("Diện tích", `${room.areaSqm} m²`),
+              mFact("Ban công", room.hasBalcony ? "Có" : "Không"),
+              room.floor ? mFact("Tầng", room.floor) : null,
+              mFact("Giá thuê", `${formatVnd(room.priceMonthly)}/tháng`),
+              room.maxOccupancy ? mFact("Tối đa", `${room.maxOccupancy} người`) : null,
+              room.viewCount > 0 ? mFact("Lượt xem", `${room.viewCount}`) : null,
+            ]}
+          </div>
+          {room.description ? (
+            <p className="whitespace-pre-line text-sm leading-normal text-[#334155]">{room.description}</p>
+          ) : null}
+          {room.subUnits && room.subUnits.length > 0 ? (
+            <div className="border-t border-[#eef1f5] pt-3">
+              <h3 className="mb-1.5 text-sm font-bold">Phòng gồm các khu riêng</h3>
+              <ul className="flex flex-col gap-1.5 text-sm text-[#334155]">
+                {room.subUnits.map((su, i) => (
+                  <li key={i} className="flex justify-between gap-3">
+                    <span>
+                      {su.label}
+                      {su.notes ? <span className="text-[#5b6475]"> · {su.notes}</span> : null}
+                    </span>
+                    {su.priceMonthly ? <span className="font-semibold">{formatVnd(su.priceMonthly)}</span> : null}
+                  </li>
+                ))}
+              </ul>
+            </div>
+          ) : null}
+        </section>
+
+        <section id="tien-nghi" className={cardCls}>
+          <h2 className="text-[17px] font-bold">Tiện nghi &amp; Dịch vụ</h2>
+          {highlights.length > 0 ? (
+            <>
+              <ul className="grid grid-cols-2 gap-x-3 gap-y-2.5 text-sm">
+                {highlights.slice(0, 8).map((a) => (
+                  <li key={a.name} className="flex items-center gap-2">
+                    <AmenityIcon icon={a.icon} className="h-4 w-4 flex-none text-[#2f6fed]" />
+                    <span className="truncate">{a.name}</span>
+                  </li>
+                ))}
+              </ul>
+              {amenities.length > 8 ? <AllAmenitiesButton groups={amenityGroups} /> : null}
+            </>
+          ) : (
+            <p className="text-sm text-[#5b6475]">Chưa cập nhật tiện ích cho phòng này.</p>
+          )}
+        </section>
+
+        <section id="chinh-sach" className={cardCls}>
+          <h2 className="text-[17px] font-bold">Chính sách &amp; chi phí</h2>
+          {fee ? (
+            <div className="grid grid-cols-3 gap-2">
+              {[
+                { k: "Điện", v: formatVnd(fee.electricityPricePerKwh), u: "/kWh" },
+                {
+                  k: "Nước",
+                  v: formatVnd(fee.waterPricePerPerson),
+                  u: fee.waterFeeMode === "per_m3" ? "/m³" : "/người",
+                },
+                { k: "Dịch vụ", v: formatVnd(fee.serviceFeePerMonth), u: "/tháng" },
+              ].map((f) => (
+                <div key={f.k} className="flex flex-col gap-0.5 rounded-[10px] bg-[#f4f6f9] px-2.5 py-2">
+                  <span className="text-[11px] text-[#5b6475]">{f.k}</span>
+                  <span className="text-[13px] font-bold leading-snug">
+                    {f.v}
+                    <span className="block text-[11px] font-normal text-[#5b6475]">{f.u}</span>
+                  </span>
+                </div>
+              ))}
+            </div>
+          ) : null}
+          {moveIn.totalMoveIn > 0 ? (
+            <div className="flex flex-col">
+              <span className="mb-1 text-sm font-bold">Chi phí nhận phòng dự kiến</span>
+              {[
+                moveIn.holdAmount > 0
+                  ? {
+                      k: "Bước 1 · Cọc giữ chỗ",
+                      note: `${moveIn.holdDays > 0 ? `Giữ phòng ${moveIn.holdDays} ngày, ` : ""}tính vào cọc nhà`,
+                      v: moveIn.holdAmount,
+                    }
+                  : null,
+                {
+                  k: moveIn.holdAmount > 0 ? "Bước 2 · Bù cho đủ cọc nhà" : "Bước 2 · Cọc nhà",
+                  note: `Cọc ${moveIn.securityDepositMonths} tháng ${formatVnd(moveIn.securityDeposit)}${
+                    moveIn.holdAmount > 0 ? ` − ${formatVnd(moveIn.holdAmount)}` : ""
+                  }`,
+                  v: moveIn.depositTopUp,
+                },
+                { k: "Bước 3 · Tiền thuê trả trước", note: `${moveIn.prepaidRentMonths} tháng`, v: moveIn.prepaidRent },
+              ]
+                .filter((x): x is { k: string; note: string; v: number } => x !== null)
+                .map((st) => (
+                  <div key={st.k} className="flex justify-between gap-3 border-b border-[#eef1f5] py-2">
+                    <span className="flex flex-col gap-px">
+                      <span className="text-[13px] font-semibold">{st.k}</span>
+                      <span className="text-[11px] text-[#5b6475]">{st.note}</span>
+                    </span>
+                    <span className="whitespace-nowrap text-[13px] font-bold">{formatVnd(st.v)}</span>
+                  </div>
+                ))}
+              <div className="flex items-baseline justify-between pt-2.5">
+                <span className="text-sm font-bold">Tổng chi phí nhận phòng</span>
+                <span className="text-lg font-extrabold text-[#1d4fbf]">{formatVnd(moveIn.totalMoveIn)}</span>
+              </div>
+              <p className="mt-1 text-[11px] text-[#5b6475]">
+                Chưa gồm điện, nước, phí dịch vụ. Số tiền chính xác được xác nhận khi ký hợp đồng.
+              </p>
+            </div>
+          ) : null}
+          {property.depositPolicy.customerNote ? (
+            <p className="rounded-[10px] bg-[#f4f6f9] px-3 py-2.5 text-xs leading-normal text-[#334155]">
+              {property.depositPolicy.customerNote}
+            </p>
+          ) : null}
+        </section>
+
+        <section id="vi-tri" className={`${cardCls} gap-2.5`}>
+          <h2 className="text-[17px] font-bold">Vị trí</h2>
+          <p className="flex gap-1.5 text-sm text-[#334155]">
+            <MapPin className="mt-0.5 h-4 w-4 flex-none text-[#5b6475]" aria-hidden />
+            <span>
+              {property.addressNew}
+              {property.addressOld ? (
+                <span className="text-[#5b6475]"> (cũ: {property.addressOld})</span>
+              ) : null}
+            </span>
+          </p>
+          {property.transportNotes.length > 0 ? (
+            <ul className="flex list-disc flex-col gap-1 pl-[22px] text-[13px] text-[#334155]">
+              {property.transportNotes.map((t, i) => (
+                <li key={i}>{t}</li>
+              ))}
+            </ul>
+          ) : null}
+          <a
+            href={mapsHref}
+            target="_blank"
+            rel="noreferrer"
+            className="flex h-10 items-center justify-center rounded-[10px] border border-[#dfe3ea] text-sm font-semibold"
+          >
+            Mở bản đồ
+          </a>
+        </section>
+
+        {adminPanel}
+
+        <section className="flex flex-col gap-2.5 pt-1">
+          <div className="flex items-baseline justify-between px-1">
+            <h2 className="text-[17px] font-bold">Phòng gần đây</h2>
+            <span className="text-xs text-[#5b6475]">Trong bán kính {NEARBY_RADIUS_KM} km</span>
+          </div>
+          {nearby.length === 0 ? (
+            <p className="rounded-[14px] bg-white p-4 text-sm text-[#5b6475]">
+              Hiện chưa có phòng trống nào khác ở gần đây.
+            </p>
+          ) : (
+            <div className="-mx-3 flex gap-2.5 overflow-x-auto px-3 [scrollbar-width:none]">
+              {nearby.map((n) => (
+                <Link
+                  key={n.id}
+                  href={`/rooms/${n.id}`}
+                  className="w-[164px] flex-none overflow-hidden rounded-[14px] border border-[#e8ebf1] bg-white"
+                >
+                  <span className="relative block h-[123px] bg-[#e9edf3]">
+                    <RoomPhoto src={n.image} alt={`Ảnh phòng ${n.code}`} className="block h-full w-full object-contain" />
+                    <span
+                      className={`absolute left-2 top-2 rounded-[10px] px-2 py-0.5 text-[10px] font-bold ${
+                        n.sameBuilding ? "bg-[#15803d] text-white" : "bg-white text-[#16233b]"
+                      }`}
+                    >
+                      {n.sameBuilding ? "Cùng tòa nhà" : `Cách ${formatDistance(n.distanceKm)}`}
+                    </span>
+                  </span>
+                  <span className="flex flex-col gap-0.5 px-2.5 pb-2.5 pt-2">
+                    <span className="text-sm font-bold">Phòng {n.code}</span>
+                    <span className="text-[11px] text-[#5b6475]">
+                      {[n.floor, `${n.areaSqm} m²`].filter(Boolean).join(" · ")}
+                    </span>
+                    <span className="text-sm font-extrabold text-[#1d4fbf]">{formatVnd(n.priceMonthly)}</span>
+                  </span>
+                </Link>
+              ))}
+            </div>
+          )}
+        </section>
+      </div>
+
+      <div className="fixed inset-x-0 bottom-0 z-40 flex items-center gap-2.5 border-t border-[#e3e7ee] bg-white px-4 pb-[max(1rem,env(safe-area-inset-bottom))] pt-2.5 shadow-[0_-4px_16px_rgba(22,35,59,0.08)]">
+        <div className="flex min-w-0 flex-grow flex-col">
+          <span className="text-[19px] font-extrabold text-[#1d4fbf]">
+            {formatVnd(room.priceMonthly)}
+            <span className="text-xs font-normal text-[#5b6475]">/tháng</span>
+          </span>
+          {moveIn.totalMoveIn > 0 ? (
+            <a href="#chinh-sach" className="truncate text-xs text-[#5b6475]!">
+              Nhận phòng: <strong className="text-[#16233b]">{formatVnd(moveIn.totalMoveIn)}</strong> ›
+            </a>
+          ) : null}
+        </div>
+        <a
+          href={zaloHref(property.contactPhone)}
+          target="_blank"
+          rel="noreferrer"
+          aria-label="Nhắn Zalo"
+          className="flex h-12 w-12 flex-none items-center justify-center rounded-xl border border-[#dfe3ea] text-xs font-bold"
+        >
+          Zalo
+        </a>
+        <a
+          href={telHref(property.contactPhone)}
+          className="flex h-12 flex-none items-center gap-2 rounded-xl bg-[#2f6fed] px-[18px] text-[15px] font-bold text-white!"
+        >
+          <Phone className="h-[18px] w-[18px]" aria-hidden />
+          Gọi ngay
+        </a>
+      </div>
+    </div>
   );
 
   return (
     <div className="flex min-h-screen flex-col">
-      <header className="border-b border-black/5 bg-white">
+      {mobile}
+      <header className="hidden border-b border-black/5 bg-white md:block">
         <div className="mx-auto flex max-w-6xl items-center gap-4 px-4 py-4">
           <Link
             href="/"
@@ -375,7 +690,7 @@ export default async function RoomDetailPage({
         </div>
       </header>
 
-      <main className="mx-auto w-full max-w-6xl flex-1 px-4 py-6">
+      <main className="mx-auto hidden w-full max-w-6xl flex-1 px-4 py-6 md:block">
         <div className="mb-4 flex flex-wrap items-start justify-between gap-3">
           <div className="min-w-0">
             <div className="flex flex-wrap items-center gap-2">

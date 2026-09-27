@@ -800,6 +800,21 @@ export async function listRooms(
     withProperty = filtered.map((s) => s.room);
   }
 
+  if (filter?.near) {
+    const origin = filter.near;
+    withProperty = withProperty
+      .map((room) => ({
+        room,
+        d:
+          typeof room.property.lat === "number" && typeof room.property.lng === "number"
+            ? haversineDistanceKm(origin, { lat: room.property.lat, lng: room.property.lng })
+            : null,
+      }))
+      .filter((x): x is { room: RoomWithProperty; d: number } => x.d !== null && x.d <= NEARBY_RADIUS_KM)
+      .sort((a, b) => a.d - b.d)
+      .map((x) => x.room);
+  }
+
   return withProperty;
 }
 

@@ -3,6 +3,7 @@ import { redirect } from "next/navigation";
 import Link from "next/link";
 import { ADMIN_COOKIE_NAME, verifySessionToken } from "@/lib/auth";
 import LogoutButton from "@/components/LogoutButton";
+import AdminMobileHeader from "@/components/mobile/AdminMobileHeader";
 
 export default async function AdminDashboardLayout({
   children,
@@ -17,7 +18,8 @@ export default async function AdminDashboardLayout({
 
   return (
     <div className="min-h-screen">
-      <header className="border-b border-black/5 bg-white">
+      <AdminMobileHeader />
+      <header className="hidden border-b border-black/5 bg-white md:block">
         <div className="mx-auto flex max-w-5xl items-center justify-between px-4 py-3">
           <nav className="flex items-center gap-4 text-sm font-medium">
             <Link href="/admin" className="text-slate-900">
@@ -39,7 +41,7 @@ export default async function AdminDashboardLayout({
           <LogoutButton />
         </div>
       </header>
-      <main className="mx-auto max-w-5xl px-4 py-6">{children}</main>
+      <main className="mx-auto max-w-5xl px-4 py-3 md:py-6">{children}</main>
     </div>
   );
 }

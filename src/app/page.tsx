@@ -8,13 +8,16 @@ import QuickBuildingFilter from "@/components/QuickBuildingFilter";
 import MapToggle from "@/components/MapToggle";
 import SortControl from "@/components/SortControl";
 import LogoutButton from "@/components/LogoutButton";
-import type { RoomStatus } from "@/types";
-import { ROOM_STATUSES } from "@/types";
-import { effectiveAmenities, roomHasAllAmenities } from "@/lib/amenities";
+import { matchesFilters, parseFilterState, parseNear, toFacetRoom } from "@/lib/roomFilters";
 import { listAmenities } from "@/lib/amenityCatalog";
 import SavedRoomsLink from "@/components/SavedRoomsLink";
+import MobileHomeControls from "@/components/mobile/MobileHomeControls";
+import MobileRoomCard from "@/components/mobile/MobileRoomCard";
+import MobileFloatingBar from "@/components/mobile/MobileFloatingBar";
 
 export const dynamic = "force-dynamic";
+
+const DEFAULT_CITY = "Thành phố Hồ Chí Minh";
 
 type SearchParams = Record<string, string | string[] | undefined>;
 
@@ -29,14 +32,14 @@ export default async function HomePage({
 }) {
   const sp = await searchParams;
 
-  const statusParam = firstValue(sp.status);
-  const statuses: RoomStatus[] = statusParam
-    ? (statusParam
-        .split(",")
-        .filter((s): s is RoomStatus => (ROOM_STATUSES as string[]).includes(s)))
-    : ["available"]; // default filter per spec: only show available rooms unless the visitor opts in to others
+  const get = (k: string) => firstValue(sp[k]);
+  // Status / price / occupancy / amenities / balcony — round 13: applied in
+  // JS via src/lib/roomFilters.ts (the same code the mobile "Lọc theo"
+  // screen reruns in the browser to show live counts per option). Location
+  // and sort still narrow the candidate set in listRooms() below.
+  const filters = parseFilterState(get);
 
-  const address = firstValue(sp.address);
+  const address = get("address");
   // Default to Thành phố Hồ Chí Minh when the customer hasn't touched the
   // city filter at all (no ?city= in the URL) — Boss's properties are all
   // there right now, so an empty first-visit homepage looked broken. "all"
@@ -44,96 +47,52 @@ export default async function HomePage({
   // tỉnh" themselves (see MainSearchBar's setCity) — distinct from the param
   // being absent, so "show everything" stays reachable and doesn't get
   // silently overridden back to the default on the next render.
-  const DEFAULT_CITY = "Thành phố Hồ Chí Minh";
-  const cityRaw = firstValue(sp.city);
+  const cityRaw = get("city");
   const city = cityRaw === undefined ? DEFAULT_CITY : cityRaw === "all" ? undefined : cityRaw;
-  const ward = firstValue(sp.ward);
-  const district = firstValue(sp.district);
-  const sortParam = firstValue(sp.sort);
+  const ward = get("ward");
+  const district = get("district");
+  const sortParam = get("sort");
   const sortBy =
     sortParam === "price_asc" || sortParam === "price_desc" || sortParam === "newest"
       ? sortParam
       : "default";
-
-  // Price range: priceMin/priceMax (set by the dual-range slider, or by a
-  // bucket pill — both write these same two params, see FilterBar.tsx) are
-  // the source of truth. `priceBucket=<key>` is kept as a fallback only for
-  // links shared before the slider existed (the slider replaced it, but an
-  // old bookmarked/forwarded link shouldn't silently stop filtering).
-  const priceMinParam = firstValue(sp.priceMin);
-  const priceMaxParam = firstValue(sp.priceMax);
-  const priceBucketKey = firstValue(sp.priceBucket);
-
-  let priceMin: number | undefined;
-  let priceMax: number | undefined;
-  if (priceMinParam !== undefined || priceMaxParam !== undefined) {
-    const parsedMin = priceMinParam !== undefined ? Number(priceMinParam) : undefined;
-    const parsedMax = priceMaxParam !== undefined ? Number(priceMaxParam) : undefined;
-    priceMin = parsedMin !== undefined && Number.isFinite(parsedMin) && parsedMin > 0 ? parsedMin : undefined;
-    priceMax = parsedMax !== undefined && Number.isFinite(parsedMax) ? parsedMax : undefined;
-  } else if (priceBucketKey) {
-    const { bucketByKey } = await import("@/lib/priceBuckets");
-    const bucket = bucketByKey(priceBucketKey);
-    priceMin = bucket?.min;
-    priceMax = bucket?.max ?? undefined;
-  }
-
-  const occupancyParam = firstValue(sp.occupancy);
-  const occupancy =
-    occupancyParam === "1" || occupancyParam === "2" || occupancyParam === "3"
-      ? (Number(occupancyParam) as 1 | 2 | 3)
-      : undefined;
-
+  // "Phòng gần vị trí của tôi" — round 13 (mobile search screen).
+  const near = parseNear(get("near")) ?? undefined;
   // "Khu vực nhanh" — round 10, §12. Same propertyId param GET /api/rooms
   // already understands.
-  const propertyId = firstValue(sp.propertyId);
+  const propertyId = get("propertyId");
 
   // "Đã lưu" — round 12. `saved=id1,id2` comes from the visitor's own
   // browser (SavedRoomsLink). It shows exactly those rooms in any status —
   // so a saved room that has since been rented shows up as "Đã cho thuê"
   // instead of silently disappearing — and ignores the other filters.
-  const savedParam = firstValue(sp.saved);
+  const savedParam = get("saved");
   const savedIds = savedParam
     ? new Set(savedParam.split(",").map((s) => s.trim()).filter(Boolean).slice(0, 100))
     : null;
 
-  const [listed, properties, admin, catalog] = await Promise.all([
+  const [listed, properties, admin, catalog, availableEverywhere] = await Promise.all([
     savedIds
       ? listRooms({ sortBy })
-      : listRooms({
-          status: statuses,
-          city,
-          ward,
-          district,
-          address,
-          priceMin,
-          priceMax,
-          occupancy,
-          propertyId,
-          sortBy,
-        }),
+      : listRooms({ city, ward, district, address, near, propertyId, sortBy }),
     listProperties(),
     isAdminSession(),
     listAmenities(),
+    // Mobile search screen: "Khu vực đang có phòng trống" + building list.
+    listRooms({ status: ["available"] }),
   ]);
-  const allRooms = savedIds ? listed.filter((r) => savedIds.has(r.id)) : listed;
-
-  // "Tiện ích phổ biến" — applied here, after listRooms(), rather than as a
-  // SQL clause (amenity names live in a JSON column). Round 12: exact match
-  // against amenity-catalog names, see src/lib/amenities.ts.
-  const amenitiesParam = firstValue(sp.amenities);
-  const selectedAmenities = amenitiesParam
-    ? amenitiesParam.split(",").filter(Boolean)
-    : [];
-  const rooms =
-    selectedAmenities.length > 0
-      ? allRooms.filter((r) =>
-          roomHasAllAmenities(
-            effectiveAmenities(r, r.property.amenitiesShared),
-            selectedAmenities
-          )
-        )
-      : allRooms;
+  // Candidate rooms for the current location, before status/price/... —
+  // the basis for the mobile filter screen's live counts.
+  const base = savedIds ? listed.filter((r) => savedIds.has(r.id)) : listed;
+  const facets = base.map(toFacetRoom);
+  const rooms = savedIds ? base : base.filter((_, i) => matchesFilters(facets[i], filters));
+  // Rooms matching everything except the amenity/balcony refinements —
+  // the map's source, same as before round 13 (the old SQL filters).
+  const allRooms = savedIds
+    ? base
+    : base.filter((_, i) =>
+        matchesFilters(facets[i], { ...filters, amenities: [], balcony: false })
+      );
 
   // Map markers: one per property with coordinates, each carrying its
   // currently-available rooms (matches what a customer landing on the map
@@ -157,18 +116,68 @@ export default async function HomePage({
       rooms: availableRoomsByProperty.get(p.id) ?? [],
     }));
 
+  // ---- Mobile (< md) data — round 13 --------------------------------
+  const popularAmenityNames = catalog.filter((a) => a.isPopular).map((a) => a.name);
+  const shortCity = (c: string) => c.replace(/^Thành phố\s+/i, "TP. ").replace(/^Tỉnh\s+/i, "");
+  const activeProperties = properties.filter((p) => p.isActive);
+  const selectedBuilding = propertyId ? activeProperties.find((p) => p.id === propertyId) : undefined;
+  const mobileTitle = savedIds
+    ? "Phòng đã lưu"
+    : near
+      ? "Gần vị trí của tôi (2 km)"
+      : address
+        ? address
+        : selectedBuilding
+          ? selectedBuilding.name
+          : ward || district || (city ? shortCity(city) : "Tất cả thành phố / tỉnh");
+
+  // "Khu vực đang có phòng trống": real available-room counts per
+  // ward, per old district and per city (all cities, not just the current).
+  const areaCounts = new Map<string, { label: string; sub: string; query: string; count: number }>();
+  const bump = (key: string, label: string, sub: string, query: string) => {
+    const cur = areaCounts.get(key) ?? { label, sub, query, count: 0 };
+    cur.count++;
+    areaCounts.set(key, cur);
+  };
+  const buildingCounts = new Map<string, number>();
+  for (const r of availableEverywhere) {
+    const p = r.property;
+    const c = encodeURIComponent(p.city);
+    if (p.ward) bump(`w:${p.city}|${p.ward}`, p.ward, shortCity(p.city), `city=${c}&ward=${encodeURIComponent(p.ward)}`);
+    if (p.district)
+      bump(`d:${p.district}`, `${p.district} (cũ)`, "Quận/huyện cũ", `city=${c}&district=${encodeURIComponent(p.district)}`);
+    if (p.city) bump(`c:${p.city}`, `Tất cả ${shortCity(p.city)}`, "Thành phố / tỉnh", `city=${c}`);
+    buildingCounts.set(p.id, (buildingCounts.get(p.id) ?? 0) + 1);
+  }
+  const areas = [...areaCounts.entries()]
+    .sort(([a], [b]) => "wdc".indexOf(a[0]) - "wdc".indexOf(b[0]))
+    .map(([, v]) => v);
+  const buildings = activeProperties
+    .filter((p) => (buildingCounts.get(p.id) ?? 0) > 0)
+    .map((p) => ({
+      id: p.id,
+      name: p.name,
+      ward: p.ward,
+      photo: p.images[0] ?? availableEverywhere.find((r) => r.propertyId === p.id)?.images[0],
+      available: buildingCounts.get(p.id) ?? 0,
+    }));
+  const onlyAvailable =
+    !savedIds && filters.statuses.length === 1 && filters.statuses[0] === "available";
+
   return (
     <div className="flex min-h-screen flex-col">
-      <header className="border-b border-black/5 bg-white">
+      <header className={`${admin ? "" : "hidden md:block"} border-b border-black/5 bg-white`}>
         <div className="mx-auto flex max-w-[1600px] items-center justify-between px-4 py-4 sm:px-6 lg:px-10">
           <div className="text-xl font-bold tracking-tight text-[color:var(--color-accent-dark)]">
             Phòng Cho Thuê
           </div>
           <div className="flex items-center gap-3">
-          <SavedRoomsLink />
+          <span className="hidden md:inline-flex">
+            <SavedRoomsLink />
+          </span>
           {admin ? (
             <div className="flex items-center gap-3">
-              <span className="rounded-full bg-amber-100 px-2.5 py-1 text-xs font-medium text-amber-800">
+              <span className="hidden rounded-full bg-amber-100 sm:inline px-2.5 py-1 text-xs font-medium text-amber-800">
                 Đang xem với quyền Admin
               </span>
               <Link
@@ -191,7 +200,67 @@ export default async function HomePage({
         </div>
       </header>
 
-      <main className="mx-auto w-full max-w-[1600px] flex-1 px-4 py-6 sm:px-6 lg:px-10">
+      {/* ---- Mobile (< md) — round 13, Claude Design "1 · Trang chủ" ---- */}
+      <div className="flex flex-1 flex-col md:hidden">
+        <MobileHomeControls
+          title={mobileTitle}
+          facets={savedIds ? [] : facets}
+          popularAmenities={popularAmenityNames}
+          areas={areas}
+          buildings={buildings}
+        />
+        <div className="px-3 pb-1 pt-2.5 text-[13px] text-[#5b6475]">
+          {savedIds ? (
+            <>
+              <strong className="text-[#16233b]">Phòng đã lưu ({rooms.length})</strong> ·{" "}
+              <Link href="/" className="font-medium text-[color:var(--color-accent)]!">
+                Tất cả phòng
+              </Link>
+            </>
+          ) : (
+            <>
+              Tìm thấy <strong className="text-[#16233b]">{rooms.length} phòng</strong>
+              {onlyAvailable ? " còn trống" : ""}
+              {near || address || propertyId ? (
+                <>
+                  {" · "}
+                  <Link href="/" className="font-medium text-[color:var(--color-accent)]!">
+                    Xoá tìm kiếm
+                  </Link>
+                </>
+              ) : null}
+            </>
+          )}
+        </div>
+        <div className="flex flex-col gap-2.5 px-3 pb-24 pt-1">
+          {rooms.length === 0 ? (
+            <div className="rounded-[14px] border border-[#e8ebf1] bg-white p-6 text-center text-sm text-slate-500">
+              {savedIds
+                ? "Các phòng đã lưu không còn hiển thị (có thể đã bị gỡ tin)."
+                : near
+                  ? "Chưa có phòng nào trong vòng 2 km quanh vị trí của anh/chị."
+                  : "Không tìm thấy phòng phù hợp với bộ lọc hiện tại."}
+            </div>
+          ) : (
+            rooms.map((room) => (
+              <MobileRoomCard
+                key={room.id}
+                room={room}
+                catalog={catalog}
+                showStatus={!onlyAvailable}
+              />
+            ))
+          )}
+          {admin ? null : (
+            <Link href="/admin" className="self-center py-3 text-xs text-slate-400!">
+              Quản trị
+            </Link>
+          )}
+        </div>
+        <MobileFloatingBar properties={mapProperties} />
+      </div>
+
+      <main className="mx-auto hidden w-full max-w-[1600px] flex-1 px-4 py-6 sm:px-6 md:block lg:px-10">
         <div className="mb-4">
           <MainSearchBar />
         </div>
@@ -252,7 +321,7 @@ export default async function HomePage({
         </div>
       </main>
 
-      <footer className="border-t border-black/5 bg-white py-4 text-center text-xs text-slate-400">
+      <footer className="hidden border-t md:block border-black/5 bg-white py-4 text-center text-xs text-slate-400">
         © {new Date().getFullYear()} Phòng Cho Thuê
       </footer>
     </div>

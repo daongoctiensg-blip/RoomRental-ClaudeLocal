@@ -26,8 +26,14 @@ body {
   font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
 }
 
-a {
-  color: inherit;
+/* In @layer base (round 13b): unlayered, this rule beat every Tailwind v4
+ * text-* utility on links, so e.g. "Xem hoa hồng & lì xì" (text-white on
+ * bg-slate-800) and "Xem chi tiết" rendered dark-on-dark. Links without a
+ * color class still inherit, exactly as before. */
+@layer base {
+  a {
+    color: inherit;
+  }
 }
 
 /* Dual-range price slider (src/components/PriceRangeSlider.tsx): two native

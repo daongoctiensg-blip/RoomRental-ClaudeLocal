@@ -249,6 +249,10 @@ export interface RoomFilter {
    * plus nearby-radius geocoding (src/lib/geocode.ts). This is the ONLY
    * filter that triggers geocoding; city/ward above never do. */
   address?: string;
+  /** "Phòng gần vị trí của tôi" (round 13): browser geolocation point.
+   * Keeps rooms within NEARBY_RADIUS_KM, sorted nearest-first. Properties
+   * without coordinates are excluded while this is set. */
+  near?: { lat: number; lng: number };
   status?: RoomStatus[];
   priceMin?: number;
   priceMax?: number;

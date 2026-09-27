@@ -28,14 +28,22 @@ export default function PhotoGallery({
   photos: rawPhotos,
   roomCode,
   sidePanel,
+  variant = "grid",
+  overlay,
 }: {
   photos: (string | undefined)[];
   roomCode: string;
   sidePanel?: React.ReactNode;
+  /** "hero" (round 13, mobile): full-width swipeable photo with a
+   * "1/N · Xem album" counter, opening the same album/viewer. */
+  variant?: "grid" | "hero";
+  /** Hero only: buttons laid over the photo (back / share / heart). */
+  overlay?: React.ReactNode;
 }) {
   const photos = rawPhotos.filter((p): p is string => Boolean(p));
   const [view, setView] = useState<View>({ kind: "closed" });
   const stripRef = useRef<HTMLDivElement>(null);
+  const [heroIndex, setHeroIndex] = useState(0);
 
   const close = useCallback(() => setView({ kind: "closed" }), []);
   const go = useCallback(
@@ -73,6 +81,15 @@ export default function PhotoGallery({
     el?.scrollIntoView({ block: "nearest", inline: "center", behavior: "smooth" });
   }, [activeIndex]);
 
+  if (variant === "hero" && photos.length === 0) {
+    return (
+      <div className="relative h-[292px] bg-[#e9edf3]">
+        <RoomPhoto alt={`Phòng ${roomCode} chưa có ảnh`} className="h-full w-full" />
+        {overlay}
+      </div>
+    );
+  }
+
   if (photos.length === 0) {
     return (
       <RoomPhoto
@@ -86,8 +103,47 @@ export default function PhotoGallery({
   const hiddenCount = photos.length - 1 - thumbs.length;
   const open = (index: number) => setView({ kind: "viewer", index });
 
+  const hero =
+    variant === "hero" ? (
+      <div className="relative h-[292px] bg-[#e9edf3]">
+        <div
+          className="flex h-full snap-x snap-mandatory overflow-x-auto [scrollbar-width:none]"
+          onScroll={(e) => {
+            const el = e.currentTarget;
+            setHeroIndex(Math.round(el.scrollLeft / Math.max(1, el.clientWidth)));
+          }}
+        >
+          {photos.map((src, i) => (
+            <button
+              type="button"
+              key={i}
+              onClick={() => open(i)}
+              className="h-full w-full flex-none snap-center"
+              aria-label={`Xem ảnh ${i + 1}`}
+            >
+              <RoomPhoto
+                src={src}
+                alt={i === 0 ? `Ảnh chính phòng ${roomCode}` : `Ảnh phòng ${roomCode} ${i + 1}`}
+                className="block h-full w-full object-contain"
+              />
+            </button>
+          ))}
+        </div>
+        {overlay}
+        <button
+          type="button"
+          onClick={() => setView({ kind: "album" })}
+          className="absolute bottom-7 right-3 rounded-xl bg-slate-900/70 px-2.5 py-1 text-xs font-semibold text-white"
+        >
+          {Math.min(heroIndex, photos.length - 1) + 1}/{photos.length} · Xem album
+        </button>
+      </div>
+    ) : null;
+
   return (
     <>
+      {hero ?? (
+      <>
       <div
         className={`grid gap-2 ${
           thumbs.length > 0 ? "grid-cols-3 sm:grid-cols-[2fr_1fr_1fr_1fr]" : "grid-cols-1"
@@ -144,6 +200,8 @@ export default function PhotoGallery({
           </button>
         </div>
       ) : null}
+      </>
+      )}
 
       {view.kind !== "closed" ? (
         <div

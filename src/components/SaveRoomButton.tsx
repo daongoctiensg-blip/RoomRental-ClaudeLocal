@@ -10,9 +10,12 @@ import { isRoomSaved, onSavedRoomsChange, toggleSavedRoom } from "@/lib/savedRoo
 export default function SaveRoomButton({
   roomId,
   variant = "overlay",
+  size = "md",
 }: {
   roomId: string;
   variant?: "overlay" | "inline";
+  /** Overlay only: "sm" = 30px (mobile card), "lg" = 40px (mobile photo hero). */
+  size?: "md" | "sm" | "lg";
 }) {
   // Starts false on the server and on first client render (no storage
   // access during SSR), then syncs — avoids a hydration mismatch.
@@ -57,10 +60,12 @@ export default function SaveRoomButton({
       aria-pressed={saved}
       aria-label={label}
       title={label}
-      className="flex h-9 w-9 items-center justify-center rounded-full bg-white/95 shadow-md ring-1 ring-black/5 transition hover:scale-105"
+      className={`flex items-center justify-center rounded-full bg-white/95 shadow-md ring-1 ring-black/5 transition hover:scale-105 ${
+        size === "sm" ? "h-[30px] w-[30px]" : size === "lg" ? "h-10 w-10" : "h-9 w-9"
+      }`}
     >
       <Heart
-        className={`h-5 w-5 ${saved ? "fill-rose-500 text-rose-500" : "text-slate-700"}`}
+        className={`${size === "sm" ? "h-4 w-4" : "h-5 w-5"} ${saved ? "fill-rose-500 text-rose-500" : "text-slate-700"}`}
         aria-hidden
       />
     </button>
