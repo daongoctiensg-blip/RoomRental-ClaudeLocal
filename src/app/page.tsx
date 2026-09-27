@@ -5,10 +5,11 @@ import RoomCard from "@/components/RoomCard";
 import FilterBar from "@/components/FilterBar";
 import MainSearchBar from "@/components/MainSearchBar";
 import QuickBuildingFilter from "@/components/QuickBuildingFilter";
-import MapToggle from "@/components/MapToggle";
+import NearMeButton from "@/components/NearMeButton";
 import SortControl from "@/components/SortControl";
 import LogoutButton from "@/components/LogoutButton";
-import { haversineDistanceKm, NEARBY_RADIUS_KM } from "@/lib/geocode";
+import { NEARBY_RADIUS_KM } from "@/lib/geocode";
+import { PUBLIC_STATUSES, publicPropertyIds } from "@/lib/publicVisibility";
 import { matchesFilters, parseFilterState, parseNear, toFacetRoom } from "@/lib/roomFilters";
 import { listAmenities } from "@/lib/amenityCatalog";
 import SavedRoomsLink from "@/components/SavedRoomsLink";
@@ -38,7 +39,13 @@ export default async function HomePage({
   // JS via src/lib/roomFilters.ts (the same code the mobile "Lọc theo"
   // screen reruns in the browser to show live counts per option). Location
   // and sort still narrow the candidate set in listRooms() below.
-  const filters = parseFilterState(get);
+  const admin = await isAdminSession();
+  // Round 15: guests only ever see "Còn trống" rooms — ?status= is ignored
+  // for them, and non-available rooms are never even loaded (see
+  // src/lib/publicVisibility.ts). Admins keep the full status filter.
+  const parsedFilters = parseFilterState(get);
+  const filters = admin ? parsedFilters : { ...parsedFilters, statuses: [...PUBLIC_STATUSES] };
+  const guestStatus = admin ? undefined : [...PUBLIC_STATUSES];
 
   const address = get("address");
   // Default to Thành phố Hồ Chí Minh when the customer hasn't touched the
@@ -66,64 +73,34 @@ export default async function HomePage({
   const propertyId = get("propertyId");
 
   // "Đã lưu" — round 12. `saved=id1,id2` comes from the visitor's own
-  // browser (SavedRoomsLink). It shows exactly those rooms in any status —
-  // so a saved room that has since been rented shows up as "Đã cho thuê"
-  // instead of silently disappearing — and ignores the other filters.
+  // browser (SavedRoomsLink) and ignores the other filters. Round 15: a
+  // guest only gets the saved rooms that are still available; the rest are
+  // just counted ("N phòng đã lưu không còn trống"), never shown.
   const savedParam = get("saved");
   const savedIds = savedParam
     ? new Set(savedParam.split(",").map((s) => s.trim()).filter(Boolean).slice(0, 100))
     : null;
 
-  const [listed, properties, admin, catalog, availableEverywhere] = await Promise.all([
+  const [listed, properties, catalog, availableEverywhere] = await Promise.all([
     savedIds
-      ? listRooms({ sortBy })
-      : listRooms({ city, ward, district, address, near, propertyId, sortBy }),
+      ? listRooms({ sortBy, status: guestStatus })
+      : listRooms({ city, ward, district, address, near, propertyId, sortBy, status: guestStatus }),
     listProperties(),
-    isAdminSession(),
     listAmenities(),
-    // Mobile search screen: "Khu vực đang có phòng trống" + building list.
+    // "Khu vực đang có phòng trống", the building list and — for guests —
+    // which buildings may be shown at all (≥ 1 available room).
     listRooms({ status: ["available"] }),
   ]);
-  // Candidate rooms for the current location, before status/price/... —
+  // Candidate rooms for the current location, before price/amenities/... —
   // the basis for the mobile filter screen's live counts.
   const base = savedIds ? listed.filter((r) => savedIds.has(r.id)) : listed;
+  const hiddenSavedCount = savedIds ? savedIds.size - base.length : 0;
   const facets = base.map(toFacetRoom);
   const rooms = savedIds ? base : base.filter((_, i) => matchesFilters(facets[i], filters));
-  // Rooms matching everything except the amenity/balcony refinements —
-  // the map's source, same as before round 13 (the old SQL filters).
-  const allRooms = savedIds
-    ? base
-    : base.filter((_, i) =>
-        matchesFilters(facets[i], { ...filters, amenities: [], balcony: false })
-      );
-
-  // Map markers: one per property with coordinates, each carrying its
-  // currently-available rooms (matches what a customer landing on the map
-  // could actually still book) — independent of whatever status filter is
-  // active in the list above, since the map is a separate way to browse.
-  const availableRoomsByProperty = new Map<string, { id: string; code: string; priceMonthly: number }[]>();
-  for (const r of allRooms) {
-    if (r.status !== "available" || !r.isActive) continue;
-    const list = availableRoomsByProperty.get(r.propertyId) ?? [];
-    list.push({ id: r.id, code: r.code, priceMonthly: r.priceMonthly });
-    availableRoomsByProperty.set(r.propertyId, list);
-  }
-  const mapProperties = properties
-    .filter((p) => p.isActive && p.lat != null && p.lng != null)
-    // "Phòng gần tôi" (round 14): only buildings inside the radius.
-    .filter(
-      (p) =>
-        !near ||
-        haversineDistanceKm(near, { lat: p.lat as number, lng: p.lng as number }) <= NEARBY_RADIUS_KM
-    )
-    .map((p) => ({
-      id: p.id,
-      name: p.name,
-      addressNew: p.addressNew,
-      lat: p.lat as number,
-      lng: p.lng as number,
-      rooms: availableRoomsByProperty.get(p.id) ?? [],
-    }));
+  const buildingsWithRooms = publicPropertyIds(availableEverywhere);
+  const quickBuildings = properties.filter(
+    (p) => p.isActive && (admin || buildingsWithRooms.has(p.id))
+  );
 
   // ---- Mobile (< md) data — round 13 --------------------------------
   const popularAmenityNames = catalog.filter((a) => a.isPopular).map((a) => a.name);
@@ -217,6 +194,7 @@ export default async function HomePage({
           popularAmenities={popularAmenityNames}
           areas={areas}
           buildings={buildings}
+          admin={admin}
         />
         <div className="px-3 pb-1 pt-2.5 text-[13px] text-[#5b6475]">
           {savedIds ? (
@@ -225,6 +203,9 @@ export default async function HomePage({
               <Link href="/" className="font-medium text-[color:var(--color-accent)]!">
                 Tất cả phòng
               </Link>
+              {hiddenSavedCount > 0 ? (
+                <span className="mt-1 block">{savedHiddenNote(hiddenSavedCount)}</span>
+              ) : null}
             </>
           ) : (
             <>
@@ -245,7 +226,7 @@ export default async function HomePage({
           {rooms.length === 0 ? (
             <div className="rounded-[14px] border border-[#e8ebf1] bg-white p-6 text-center text-sm text-slate-500">
               {savedIds
-                ? "Các phòng đã lưu không còn hiển thị (có thể đã bị gỡ tin)."
+                ? "Các phòng anh/chị đã lưu hiện không còn trống."
                 : near
                   ? "Chưa có phòng nào trong vòng 2 km quanh vị trí của anh/chị."
                   : "Không tìm thấy phòng phù hợp với bộ lọc hiện tại."}
@@ -266,7 +247,7 @@ export default async function HomePage({
             </Link>
           )}
         </div>
-        <MobileFloatingBar properties={mapProperties} near={near} radiusKm={NEARBY_RADIUS_KM} />
+        <MobileFloatingBar near={near} radiusKm={NEARBY_RADIUS_KM} />
       </div>
 
       <main className="mx-auto hidden w-full max-w-[1600px] flex-1 px-4 py-6 sm:px-6 md:block lg:px-10">
@@ -276,13 +257,12 @@ export default async function HomePage({
 
         <div className="mb-6">
           <QuickBuildingFilter
-            properties={properties
-              .filter((p) => p.isActive)
+            properties={quickBuildings
               .map((p) => ({ id: p.id, name: p.name }))}
           />
         </div>
 
-        <MapToggle properties={mapProperties} near={near} radiusKm={NEARBY_RADIUS_KM} />
+        <NearMeButton active={Boolean(near)} radiusKm={NEARBY_RADIUS_KM} />
 
         <div className="grid grid-cols-1 gap-6 lg:grid-cols-[240px_1fr]">
           <aside className="lg:sticky lg:top-6 lg:self-start">
@@ -290,6 +270,7 @@ export default async function HomePage({
               popularAmenities={catalog
                 .filter((a) => a.isPopular)
                 .map((a) => ({ name: a.name, icon: a.icon }))}
+              showStatus={admin}
             />
           </aside>
 
@@ -306,9 +287,14 @@ export default async function HomePage({
                       <Link href="/" className="font-medium text-[color:var(--color-accent)] hover:underline">
                         ← Quay lại tất cả phòng
                       </Link>
+                      {hiddenSavedCount > 0 ? (
+                        <span className="mt-1 block">{savedHiddenNote(hiddenSavedCount)}</span>
+                      ) : null}
                     </>
                   ) : (
-                    "Xem danh sách phòng còn trống, lọc theo địa chỉ, trạng thái và giá thuê."
+                    admin
+                      ? "Xem danh sách phòng, lọc theo địa chỉ, trạng thái và giá thuê."
+                      : "Danh sách phòng còn trống, lọc theo địa chỉ, giá thuê và tiện ích."
                   )}
                 </p>
               </div>
@@ -318,7 +304,7 @@ export default async function HomePage({
             {rooms.length === 0 ? (
               <div className="rounded-xl bg-white p-8 text-center text-slate-500 shadow-sm ring-1 ring-black/5">
                 {savedIds
-                  ? "Các phòng đã lưu không còn hiển thị (có thể đã bị gỡ tin)."
+                  ? "Các phòng anh/chị đã lưu hiện không còn trống."
                   : "Không tìm thấy phòng phù hợp với bộ lọc hiện tại."}
               </div>
             ) : (
@@ -335,4 +321,10 @@ export default async function HomePage({
       </footer>
     </div>
   );
+}
+
+/** Round 15: saved rooms that are no longer available are only counted —
+ * never shown — for a guest (and deleted/unlisted ones for everyone). */
+function savedHiddenNote(n: number): string {
+  return `${n} phòng anh/chị đã lưu hiện không còn trống nên không hiển thị.`;
 }

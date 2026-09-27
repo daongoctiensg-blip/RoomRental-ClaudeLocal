@@ -7,6 +7,7 @@ import { ROOM_SORT_OPTIONS } from "@/types";
 import {
   type FacetRoom,
   type FilterState,
+  DEFAULT_STATUSES,
   countActiveFilters,
   parseFilterState,
   writeFilterState,
@@ -38,7 +39,9 @@ export default function MobileHomeControls({
   popularAmenities,
   areas,
   buildings,
+  admin = false,
 }: {
+  admin?: boolean;
   /** What the search box shows: the current place / keyword / building. */
   title: string;
   facets: FacetRoom[];
@@ -53,7 +56,9 @@ export default function MobileHomeControls({
   const [layer, setLayer] = useState<"search" | "filter" | "sort" | null>(null);
   const close = useCallback(() => setLayer(null), []);
 
-  const filters = parseFilterState((k) => searchParams.get(k));
+  const parsed = parseFilterState((k) => searchParams.get(k));
+  // Guests: status is always "Còn trống" (the server ignores ?status= too).
+  const filters = admin ? parsed : { ...parsed, statuses: DEFAULT_STATUSES };
   const active = countActiveFilters(filters);
   const sort = searchParams.get("sort") ?? "default";
 
@@ -196,6 +201,7 @@ export default function MobileHomeControls({
           amenities={popularAmenities}
           onClose={close}
           onApply={applyFilters}
+          showStatus={admin}
         />
       ) : null}
       {layer === "sort" ? (

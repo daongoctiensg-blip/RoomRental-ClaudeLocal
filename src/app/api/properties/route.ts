@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
-import { createProperty, listProperties, toPublicProperty, type PropertyInput } from "@/lib/db";
+import { createProperty, listProperties, listRooms, toPublicProperty, type PropertyInput } from "@/lib/db";
+import { publicPropertyIds } from "@/lib/publicVisibility";
 import { isAdminRequest, requireAdmin } from "@/lib/apiAuth";
 
 // Public endpoint — non-admin callers only get the customer-safe shape
@@ -15,8 +16,11 @@ export async function GET(request: NextRequest) {
   const { searchParams } = new URL(request.url);
   const includeInactive = admin && searchParams.get("includeInactive") === "true";
   const properties = await listProperties({ includeInactive });
+  if (admin) return NextResponse.json({ properties });
+  // Round 15: guests only see buildings with at least one available room.
+  const visible = publicPropertyIds(await listRooms({ status: ["available"] }));
   return NextResponse.json({
-    properties: admin ? properties : properties.map(toPublicProperty),
+    properties: properties.filter((p) => visible.has(p.id)).map(toPublicProperty),
   });
 }
 

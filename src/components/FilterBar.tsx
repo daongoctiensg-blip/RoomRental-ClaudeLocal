@@ -15,7 +15,11 @@ import { AmenityIcon } from "@/components/AmenityIcon";
  */
 export default function FilterBar({
   popularAmenities,
+  showStatus = false,
 }: {
+  /** Round 15: the "Trạng thái" group is admin-only — guests only ever
+   * see available rooms (enforced on the server). */
+  showStatus?: boolean;
   /** Round 12: the checkbox list is the amenity catalog's "phổ biến"
    * items (admin-controlled), no longer a hardcoded keyword list. */
   popularAmenities: { name: string; icon: string }[];
@@ -149,6 +153,7 @@ export default function FilterBar({
         isPending ? "opacity-70" : ""
       }`}
     >
+      {showStatus ? (
       <div>
         <h3 className="mb-2 text-xs font-semibold uppercase tracking-wide text-slate-500">
           Trạng thái
@@ -173,6 +178,7 @@ export default function FilterBar({
           })}
         </div>
       </div>
+      ) : null}
 
       <div>
         <h3 className="mb-2 text-xs font-semibold uppercase tracking-wide text-slate-500">

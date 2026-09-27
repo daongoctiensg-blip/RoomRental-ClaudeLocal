@@ -2,6 +2,7 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 import { getRoom, getCurrentUtilityFee, toPublicRoom } from "@/lib/db";
 import { isAdminSession } from "@/lib/apiAuth";
+import { isRoomPublic } from "@/lib/publicVisibility";
 import RoomPhoto from "@/components/RoomPhoto";
 import PrintButton from "@/components/PrintButton";
 import { formatVnd, telHref, zaloHref } from "@/lib/format";
@@ -35,7 +36,8 @@ export default async function RoomExportPage({
   // Same visibility rule as the regular detail page: a deactivated room (or
   // one on a deactivated property) is unreachable by a non-admin, even via
   // this export route.
-  if (!admin && (!fullRoom.isActive || !fullRoom.property.isActive)) notFound();
+  // Round 15: guests can only export available rooms.
+  if (!admin && !isRoomPublic(fullRoom)) notFound();
 
   const room = toPublicRoom(fullRoom);
   const property = room.property;

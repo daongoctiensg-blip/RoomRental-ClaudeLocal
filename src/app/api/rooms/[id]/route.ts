@@ -7,6 +7,7 @@ import {
   type RoomInput,
 } from "@/lib/db";
 import { isAdminRequest, requireAdmin } from "@/lib/apiAuth";
+import { isRoomPublic } from "@/lib/publicVisibility";
 
 type Params = { params: Promise<{ id: string }> };
 
@@ -20,7 +21,8 @@ export async function GET(request: NextRequest, { params }: Params) {
   // on a deactivated property, must be as unreachable as a missing id for a
   // non-admin caller — this REST endpoint is a separate code path from that
   // page and needs the same check independently.
-  if (!admin && (!room.isActive || !room.property.isActive)) {
+  // Round 15: guests only see available rooms (see src/lib/publicVisibility.ts).
+  if (!admin && !isRoomPublic(room)) {
     return NextResponse.json({ error: "Not found" }, { status: 404 });
   }
   return NextResponse.json({ room: admin ? room : toPublicRoom(room) });

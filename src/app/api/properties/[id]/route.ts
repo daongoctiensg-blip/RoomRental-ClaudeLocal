@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import {
   deactivateProperty,
   getProperty,
+  listRooms,
   toPublicProperty,
   updateProperty,
   type PropertyInput,
@@ -24,6 +25,11 @@ export async function GET(request: NextRequest, { params }: Params) {
   // who had (or guessed) its id.
   if (!admin && !property.isActive) {
     return NextResponse.json({ error: "Not found" }, { status: 404 });
+  }
+  // Round 15: a building with no available room is hidden from guests.
+  if (!admin) {
+    const available = await listRooms({ status: ["available"], propertyId: id });
+    if (available.length === 0) return NextResponse.json({ error: "Not found" }, { status: 404 });
   }
   return NextResponse.json({ property: admin ? property : toPublicProperty(property) });
 }

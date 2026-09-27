@@ -62,8 +62,10 @@ export async function GET(request: NextRequest) {
     filter.sortBy = sortBy;
   }
 
-  const rooms = await listRooms(filter);
   const admin = isAdminRequest(request);
+  // Round 15: guests only ever get "Còn trống" rooms, whatever ?status= says.
+  if (!admin) filter.status = ["available"];
+  const rooms = await listRooms(filter);
   return NextResponse.json({ rooms: admin ? rooms : rooms.map(toPublicRoom) });
 }
 

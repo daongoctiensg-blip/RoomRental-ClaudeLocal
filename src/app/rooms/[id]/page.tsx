@@ -13,6 +13,8 @@ import { listAmenities } from "@/lib/amenityCatalog";
 import { effectiveAmenities, groupAmenities, resolveAmenities } from "@/lib/amenities";
 import { calculateMoveInCost } from "@/lib/moveInCost";
 import { findNearbyRooms, formatDistance } from "@/lib/nearbyRooms";
+import { isRoomPublic } from "@/lib/publicVisibility";
+import RoomUnavailable from "@/components/RoomUnavailable";
 import { NEARBY_RADIUS_KM } from "@/lib/geocode";
 import RoomPhoto from "@/components/RoomPhoto";
 import MobileDetailNav from "@/components/mobile/MobileDetailNav";
@@ -51,6 +53,14 @@ export default async function RoomDetailPage({
   // (e.g. to review before reactivating), so this only applies to
   // non-admins. Found in QA: this page had no active-status check at all.
   if (!admin && (!fullRoom.isActive || !fullRoom.property.isActive)) notFound();
+  // Round 15: a guest only sees available rooms. An old link (Zalo,
+  // bookmark, "Đã lưu") to a room that is now deposited / rented / under
+  // repair gets a neutral "no longer available" page — which status it is
+  // is not revealed — plus the available rooms nearby.
+  if (!admin && !isRoomPublic(fullRoom)) {
+    const nearbyForGone = findNearbyRooms(fullRoom, await listRooms({ status: ["available"] }));
+    return <RoomUnavailable nearby={nearbyForGone} propertyName={fullRoom.property.name} />;
+  }
   // Real view counter — every open of this page counts, for every viewer
   // type (customer, sale, admin alike). Deliberately NOT called from
   // getRoom() itself, since that's also used by non-detail-page contexts

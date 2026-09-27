@@ -104,12 +104,15 @@ export default function MobileFilterScreen({
   amenities,
   onClose,
   onApply,
+  showStatus = false,
 }: {
   initial: FilterState;
   facets: FacetRoom[];
   amenities: string[];
   onClose: () => void;
   onApply: (next: FilterState) => void;
+  /** Round 15: admin-only (guests only see available rooms). */
+  showStatus?: boolean;
 }) {
   const [draft, setDraft] = useState<FilterState>(initial);
   const patch = (p: Partial<FilterState>) => setDraft((d) => ({ ...d, ...p }));
@@ -311,6 +314,7 @@ export default function MobileFilterScreen({
           </div>
         </section>
 
+        {showStatus ? (
         <section className="flex flex-col gap-2.5">
           <h2 className="text-[15px] font-bold">Trạng thái</h2>
           <div className="flex flex-wrap gap-2">
@@ -327,6 +331,7 @@ export default function MobileFilterScreen({
             })}
           </div>
         </section>
+        ) : null}
       </div>
 
       <div className="flex-none border-t border-[#eef1f5] bg-white px-4 pb-[max(1.25rem,env(safe-area-inset-bottom))] pt-3">
