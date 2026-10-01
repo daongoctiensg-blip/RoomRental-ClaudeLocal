@@ -1,7 +1,14 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
-import { ChevronLeft, Search, LocateFixed, Clock, Building2, MapPin } from "lucide-react";
+import { useEffect, useMemo, useRef, useState } from "react";
+import { ChevronLeft, Search, LocateFixed, Clock, Building2, MapPin, Landmark, Map as MapIcon } from "lucide-react";
+import {
+  type LocationCounts,
+  type LocationHit,
+  type LocationKind,
+  enterLocationHit,
+  searchLocations,
+} from "@/lib/locationSearch";
 import RoomPhoto from "@/components/RoomPhoto";
 import FullScreen from "@/components/mobile/FullScreen";
 import {
@@ -22,6 +29,7 @@ export interface SearchArea {
 export interface SearchBuilding {
   id: string;
   name: string;
+  address: string;
   ward: string;
   photo?: string;
   available: number;
@@ -34,16 +42,35 @@ export interface SearchBuilding {
  * location and opens `/?near=lat,lng` (rooms within 2 km, nearest first —
  * see listRooms' `near` filter).
  */
+const KIND_ICON: Record<LocationKind, typeof MapPin> = {
+  city: Landmark,
+  ward: MapPin,
+  district: MapIcon,
+  building: Building2,
+};
+const KIND_TITLE: Record<LocationKind, string> = {
+  building: "Tòa nhà",
+  ward: "Phường / Xã",
+  district: "Quận / Huyện (cũ)",
+  city: "Tỉnh / Thành phố",
+};
+const KIND_ORDER: LocationKind[] = ["building", "ward", "district", "city"];
+
 export default function MobileSearchScreen({
   initialQuery,
   areas,
   buildings,
+  counts,
+  currentCity,
   onClose,
   go,
 }: {
   initialQuery: string;
   areas: SearchArea[];
   buildings: SearchBuilding[];
+  /** Round 16: available-room counts per city / ward / old district. */
+  counts: LocationCounts;
+  currentCity?: string;
   onClose: () => void;
   /** Replace the location part of the URL with `query` and close. */
   go: (query: string) => void;
@@ -65,9 +92,38 @@ export default function MobileSearchScreen({
     go(entry.query);
   };
 
+  // Round 16: type-ahead over the official province / ward / old-district
+  // lists + buildings (src/lib/locationSearch.ts).
+  const hits = useMemo(
+    () =>
+      searchLocations(text, {
+        counts,
+        currentCity,
+        buildings: buildings.map((b) => ({
+          id: b.id,
+          name: b.name,
+          address: b.address,
+          ward: b.ward,
+          available: b.available,
+        })),
+      }),
+    [text, counts, currentCity, buildings]
+  );
+  const openHit = (h: LocationHit) =>
+    open({
+      title: h.label,
+      sub: h.kind === "building" ? "Tòa nhà" : h.sub,
+      query: h.query,
+    });
+
   const submit = () => {
     const q = text.trim();
     if (!q) return;
+    const best = enterLocationHit(q, hits);
+    if (best) {
+      openHit(best);
+      return;
+    }
     open({
       title: q,
       sub: "Tìm theo từ khoá",
@@ -125,7 +181,8 @@ export default function MobileSearchScreen({
             type="search"
             enterKeyHint="search"
             aria-label="Tìm phòng"
-            placeholder="Địa chỉ, phường, tên tòa nhà…"
+            placeholder="Tỉnh/thành, phường, quận, tòa nhà…"
+            autoComplete="off"
             value={text}
             onChange={(e) => setText(e.target.value)}
             className="min-w-0 flex-grow bg-transparent text-[15px] outline-none"
@@ -135,19 +192,69 @@ export default function MobileSearchScreen({
 
       <div className="flex flex-grow flex-col gap-[22px] overflow-y-auto p-4">
         {text.trim() ? (
-          <button
-            type="button"
-            onClick={submit}
-            className="-mb-2 flex min-h-11 items-center gap-2.5 text-left text-[15px]"
-          >
-            <Search className="h-[18px] w-[18px] flex-none text-[#5b6475]" aria-hidden />
-            <span>
-              Tìm “<strong>{text.trim()}</strong>”
-            </span>
-          </button>
+          <div className="-mt-1 flex flex-col">
+            {/* Groups in order of their best match (hits are pre-sorted). */}
+            {KIND_ORDER.filter((k) => hits.some((h) => h.kind === k))
+              .sort((a, b) => hits.findIndex((h) => h.kind === a) - hits.findIndex((h) => h.kind === b))
+              .map((k) => (
+              <section key={k} className="flex flex-col pb-2">
+                <h2 className="pb-1 pt-2 text-xs font-semibold uppercase tracking-wide text-[#5b6475]">
+                  {KIND_TITLE[k]}
+                </h2>
+                {hits
+                  .filter((h) => h.kind === k)
+                  .map((h) => {
+                    const Icon = KIND_ICON[h.kind];
+                    return (
+                      <button
+                        key={h.query}
+                        type="button"
+                        onClick={() => openHit(h)}
+                        className="flex min-h-12 items-center gap-3 border-b border-[#f1f4f8] text-left"
+                      >
+                        <Icon className="h-[18px] w-[18px] flex-none text-[#2f6fed]" aria-hidden />
+                        <span className="flex min-w-0 flex-col">
+                          <span className="truncate text-[15px]">{h.label}</span>
+                          <span className="truncate text-xs text-[#5b6475]">
+                            {h.sub}
+                            {" · "}
+                            {h.count > 0 ? (
+                              <span className="font-medium text-[#15803d]">{h.count} phòng trống</span>
+                            ) : (
+                              <span>chưa có phòng trống</span>
+                            )}
+                          </span>
+                        </span>
+                      </button>
+                    );
+                  })}
+              </section>
+            ))}
+            <button
+              type="button"
+              onClick={() =>
+                open({
+                  title: text.trim(),
+                  sub: "Tìm theo từ khoá",
+                  query: `city=all&address=${encodeURIComponent(text.trim())}`,
+                })
+              }
+              className="flex min-h-12 items-center gap-3 text-left text-[15px]"
+            >
+              <Search className="h-[18px] w-[18px] flex-none text-[#5b6475]" aria-hidden />
+              <span>
+                Tìm theo từ khoá “<strong>{text.trim()}</strong>”
+                {hits.length === 0 ? (
+                  <span className="block text-xs text-[#5b6475]">
+                    Không thấy tỉnh/thành, phường hay tòa nhà nào khớp — thử gõ ngắn hơn, vd “phú thuận”, “q7”, “hcm”.
+                  </span>
+                ) : null}
+              </span>
+            </button>
+          </div>
         ) : null}
 
-        <div className="flex flex-col gap-1">
+        <div className={`flex flex-col gap-1 ${text.trim() ? "hidden" : ""}`}>
           <button
             type="button"
             onClick={nearMe}
@@ -160,7 +267,7 @@ export default function MobileSearchScreen({
           {locError ? <p className="text-[13px] text-rose-600">{locError}</p> : null}
         </div>
 
-        {recent.length > 0 ? (
+        {!text.trim() && recent.length > 0 ? (
           <section className="flex flex-col gap-1">
             <div className="flex items-baseline justify-between">
               <h2 className="text-base font-bold">Tìm kiếm gần đây</h2>
@@ -192,7 +299,7 @@ export default function MobileSearchScreen({
           </section>
         ) : null}
 
-        {areas.length > 0 ? (
+        {!text.trim() && areas.length > 0 ? (
           <section className="flex flex-col gap-2.5">
             <h2 className="text-base font-bold">Khu vực đang có phòng trống</h2>
             <div className="flex flex-wrap gap-2">
@@ -211,7 +318,7 @@ export default function MobileSearchScreen({
           </section>
         ) : null}
 
-        {buildings.length > 0 ? (
+        {!text.trim() && buildings.length > 0 ? (
           <section className="flex flex-col gap-2.5">
             <h2 className="text-base font-bold">Tòa nhà</h2>
             {buildings.map((b) => (

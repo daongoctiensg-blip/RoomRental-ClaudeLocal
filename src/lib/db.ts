@@ -22,6 +22,7 @@ import type {
 } from "@/types";
 import { getPool } from "@/lib/mysqlPool";
 import { extractSearchKeywords, matchesKeywords } from "@/lib/search";
+import { cityAliases, districtAliases } from "@/lib/locationSearch";
 import { NEARBY_RADIUS_KM, geocodeAddress, haversineDistanceKm } from "@/lib/geocode";
 import { canonicalizeAmenityDelta, canonicalizeAmenityNames } from "@/lib/amenityCatalog";
 
@@ -785,6 +786,13 @@ export async function listRooms(
           r.property.addressOld ?? "",
           r.property.name,
           ...r.property.transportNotes,
+          // Round 16: structured fields + what people actually type
+          // ("TP HCM", "Sài Gòn", "Q7") — see src/lib/locationSearch.ts.
+          r.property.city,
+          r.property.ward,
+          r.property.district,
+          ...(r.property.city ? cityAliases(r.property.city) : []),
+          ...(r.property.district ? districtAliases(r.property.district) : []),
         ].join(" | "),
         keywords
       );

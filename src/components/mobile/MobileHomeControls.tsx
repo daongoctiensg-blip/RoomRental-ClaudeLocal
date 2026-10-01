@@ -14,6 +14,7 @@ import {
 } from "@/lib/roomFilters";
 import { normalizeAmenityName } from "@/lib/amenities";
 import MobileFilterScreen from "@/components/mobile/MobileFilterScreen";
+import type { LocationCounts } from "@/lib/locationSearch";
 import MobileSearchScreen, {
   type SearchArea,
   type SearchBuilding,
@@ -39,6 +40,8 @@ export default function MobileHomeControls({
   popularAmenities,
   areas,
   buildings,
+  counts,
+  currentCity,
   admin = false,
 }: {
   admin?: boolean;
@@ -48,6 +51,9 @@ export default function MobileHomeControls({
   popularAmenities: string[];
   areas: SearchArea[];
   buildings: SearchBuilding[];
+  /** Round 16: for the search type-ahead. */
+  counts: LocationCounts;
+  currentCity?: string;
 }) {
   const router = useRouter();
   const pathname = usePathname();
@@ -190,6 +196,8 @@ export default function MobileHomeControls({
           initialQuery={searchParams.get("address") ?? ""}
           areas={areas}
           buildings={buildings}
+          counts={counts}
+          currentCity={currentCity}
           onClose={close}
           go={goLocation}
         />

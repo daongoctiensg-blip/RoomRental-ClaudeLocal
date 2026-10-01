@@ -10,6 +10,7 @@ import SortControl from "@/components/SortControl";
 import LogoutButton from "@/components/LogoutButton";
 import { NEARBY_RADIUS_KM } from "@/lib/geocode";
 import { PUBLIC_STATUSES, publicPropertyIds } from "@/lib/publicVisibility";
+import type { LocationCounts } from "@/lib/locationSearch";
 import { matchesFilters, parseFilterState, parseNear, toFacetRoom } from "@/lib/roomFilters";
 import { listAmenities } from "@/lib/amenityCatalog";
 import SavedRoomsLink from "@/components/SavedRoomsLink";
@@ -143,10 +144,22 @@ export default async function HomePage({
     .map((p) => ({
       id: p.id,
       name: p.name,
+      address: p.addressNew,
       ward: p.ward,
       photo: p.images[0] ?? availableEverywhere.find((r) => r.propertyId === p.id)?.images[0],
       available: buildingCounts.get(p.id) ?? 0,
     }));
+  // Round 16: available-room counts for the mobile search type-ahead.
+  const locationCounts: LocationCounts = { city: {}, ward: {}, district: {} };
+  for (const r of availableEverywhere) {
+    const p = r.property;
+    if (p.city) locationCounts.city[p.city] = (locationCounts.city[p.city] ?? 0) + 1;
+    if (p.city && p.ward) {
+      const k = `${p.city}|${p.ward}`;
+      locationCounts.ward[k] = (locationCounts.ward[k] ?? 0) + 1;
+    }
+    if (p.district) locationCounts.district[p.district] = (locationCounts.district[p.district] ?? 0) + 1;
+  }
   const onlyAvailable =
     !savedIds && filters.statuses.length === 1 && filters.statuses[0] === "available";
 
@@ -194,6 +207,8 @@ export default async function HomePage({
           popularAmenities={popularAmenityNames}
           areas={areas}
           buildings={buildings}
+          counts={locationCounts}
+          currentCity={city}
           admin={admin}
         />
         <div className="px-3 pb-1 pt-2.5 text-[13px] text-[#5b6475]">
