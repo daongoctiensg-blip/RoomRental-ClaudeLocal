@@ -296,6 +296,20 @@ export default async function RoomDetailPage({
                     Xem lịch sử →
                   </Link>
                 </div>
+
+                {/* Sales-only print copy (commission / lì xì / cancellation split).
+                    The customer copy is the plain "Xuất PDF" button in the price card. */}
+                <div className="mt-4 border-t border-amber-200 pt-4">
+                  <Link
+                    href={`/rooms/${fullRoom.id}/export/internal`}
+                    target="_blank"
+                    className="inline-flex items-center gap-1.5 rounded-lg border border-amber-400 bg-white px-3 py-2 text-sm font-semibold text-amber-800 hover:bg-amber-100"
+                  >
+                    <FileDown className="h-4 w-4" aria-hidden />
+                    Xuất PDF nội bộ (cho sale)
+                  </Link>
+                  <p className="mt-1 text-xs text-amber-700">Có hoa hồng và tỉ lệ chia — không gửi khách.</p>
+                </div>
               </section>
   ) : null;
 
